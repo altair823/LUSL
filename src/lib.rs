@@ -1,5 +1,6 @@
 pub mod hash;
 pub mod meta;
+mod serialize;
 pub mod test_util;
 
 #[cfg(test)]

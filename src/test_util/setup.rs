@@ -1,4 +1,6 @@
 pub static ORIGINAL_DIR: &str = "tests/original_images";
+pub static ORIGINAL_FILE1: &str = "tests/original_images/dir1/board-g43968feec_1920.jpg";
+pub static ORIGINAL_FILE2: &str = "tests/original_images/dir1/폭발.jpg";
 pub static RESULT_DIR_PRIFIX: &str = "tests/result_images";
 
 use std::fs::create_dir_all;
