@@ -1,11 +1,16 @@
 use std::ffi::OsString;
 use std::fs::File;
+use std::io::{BufReader, BufRead};
 use std::path::{Path, PathBuf};
 
+use crate::hash;
 use crate::serialize::deserializable::Deserialize;
 use crate::serialize::serializable::Serialize;
 
-use md5;
+use md5::digest::core_api::CoreWrapper;
+use md5::{Md5, Digest, Md5Core};
+
+const CAPACITY: usize = 128;
 
 #[derive(Debug)]
 pub struct MetaData {
@@ -27,12 +32,8 @@ impl MetaData {
             is_file: false,
             is_dir: false,
             is_symlink: false,
-            checksum: None,
+            checksum: None, 
         }
-    }
-
-    pub fn make_checksum<T: AsRef<[u8]>>(&mut self, data: T) {
-        self.checksum = Some(format!("{:x}", md5::compute(data)));
     }
 
     fn name_ex_to_binary(&self) -> Vec<u8> {
@@ -137,7 +138,23 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
                         Ok(m) => m.is_symlink(),
                         Err(_) => false,
                     },
-                    checksum: None,
+                    checksum: {
+                        let mut hasher = Md5::new();
+                        let mut buf_reader=  BufReader::with_capacity(CAPACITY, file);
+                        loop {
+                            let length = {
+                                let buf = buf_reader.fill_buf().unwrap();
+                                hasher.update(buf);
+                                buf.len()
+                            };
+                            if length == 0 {
+                                break;
+                            }
+                            buf_reader.consume(length);
+                        }
+                        let a = hasher.finalize();
+                        Some(format!("{:x}", a))
+                    },
                 }
             }
             Err(_) => return MetaData::new(),
@@ -231,7 +248,7 @@ mod tests {
     use crate::test_util::setup;
     use crate::test_util::setup::{ORIGINAL_FILE1, ORIGINAL_FILE2};
 
-    use super::{super::test_util, MetaData};
+    use super::{super::super::test_util, MetaData};
     use fs_extra::dir;
 
     #[test]
@@ -248,14 +265,12 @@ mod tests {
         for f in original_file_vec {
             let mut meta = MetaData::from(&f);
             let data = fs::read(f).unwrap();
-            meta.make_checksum(data);
             original_metadata_vec.push(meta);
         }
         let mut result_metadata_vec = Vec::new();
         for f in result_file_vec {
             let mut meta = MetaData::from(&f);
             let data = fs::read(f).unwrap();
-            meta.make_checksum(data);
             result_metadata_vec.push(meta);
         }
 
@@ -317,7 +332,6 @@ mod tests {
     fn checksum_serialize_test() {
         let mut meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
         let data = fs::read(ORIGINAL_FILE1).unwrap();
-        meta1.make_checksum(data);
 
         let binary = meta1.serialize();
         let name_end_index = binary[0] as usize * 0x100 + binary[1] as usize;
@@ -338,10 +352,10 @@ mod tests {
 
     #[test]
     fn metadata_serialize_test() {
-        let mut meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
-        let data = fs::read(ORIGINAL_FILE1).unwrap();
-        meta1.make_checksum(data);
+        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
         let binary = meta1.serialize();
+
+        println!("{:?}", meta1);
 
         let meta2 = MetaData::deserialize(&binary);
         assert_eq!(meta1, meta2);
