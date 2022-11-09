@@ -3,10 +3,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use crate::hash;
-use crate::serialize::deserializable::Deserialize;
-use crate::serialize::serializable::Serialize;
-
 use md5::digest::core_api::CoreWrapper;
 use md5::{Digest, Md5, Md5Core};
 
@@ -33,6 +29,32 @@ impl MetaData {
             is_dir: false,
             is_symlink: false,
             checksum: None,
+        }
+    }
+
+    pub fn with_data(
+        filename: String,
+        size: u64,
+        is_file: bool,
+        is_dir: bool,
+        is_symlink: bool,
+        checksum: String,
+    ) -> Self {
+        let filename = PathBuf::from(filename);
+        MetaData {
+            name: match filename.file_stem() {
+                Some(f) => f.to_os_string(),
+                None => OsString::new(),
+            },
+            extension: match filename.extension() {
+                Some(e) => e.to_os_string(),
+                None => OsString::new(),
+            },
+            size: size,
+            is_file: is_file,
+            is_dir: is_dir,
+            is_symlink: is_symlink,
+            checksum: Some(checksum),
         }
     }
 
@@ -107,6 +129,65 @@ impl MetaData {
         }
         binary
     }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut binary: Vec<u8> = Vec::new();
+        binary.append(&mut self.name_ex_to_binary());
+        binary.append(&mut self.type_size_to_binary());
+        binary.append(&mut self.checksum_to_binary());
+        binary
+    }
+
+    pub fn deserialize(binary: &Vec<u8>) -> Self {
+        let name_size = binary[0] as usize * 0x100 + binary[1] as usize;
+        let name = match std::str::from_utf8(&binary[2..name_size + 2]) {
+            Ok(s) => String::from(s),
+            Err(_) => String::from("Untitle.txt"),
+        };
+        let type_size = binary[name_size + 2];
+
+        let is_file;
+        let is_dir;
+        let is_symlink;
+        match type_size & 0x80 {
+            0 => is_file = false,
+            _ => is_file = true,
+        }
+        match type_size & 0x40 {
+            0 => is_dir = false,
+            _ => is_dir = true,
+        }
+        match type_size & 0x20 {
+            0 => is_symlink = false,
+            _ => is_symlink = true,
+        }
+
+        let type_size_index = (type_size & 0xF) as usize;
+        let mut size: u64 = 0;
+        let mut coef = 1;
+        for i in &binary[name_size + 3..name_size + type_size_index + 3] {
+            size += *i as u64 * coef;
+            coef *= 0x100;
+        }
+
+        let checksum = match std::str::from_utf8(
+            &binary[name_size + type_size_index + 3..name_size + type_size_index + 3 + 32],
+        ) {
+            Ok("00000000000000000000000000000000") => None,
+            Ok(c) => Some(c.to_string()),
+            Err(_) => None,
+        };
+
+        MetaData {
+            name: PathBuf::from(&name).file_stem().unwrap().to_os_string(),
+            extension: PathBuf::from(&name).extension().unwrap().to_os_string(),
+            size: size,
+            is_file: is_file,
+            is_dir: is_dir,
+            is_symlink: is_symlink,
+            checksum: checksum,
+        }
+    }
 }
 
 impl<T: AsRef<Path>> From<&T> for MetaData {
@@ -174,77 +255,12 @@ impl PartialEq for MetaData {
     }
 }
 
-impl Serialize for MetaData {
-    fn serialize(&self) -> Vec<u8> {
-        let mut binary: Vec<u8> = Vec::new();
-        binary.append(&mut self.name_ex_to_binary());
-        binary.append(&mut self.type_size_to_binary());
-        binary.append(&mut self.checksum_to_binary());
-        binary
-    }
-}
-
-impl Deserialize for MetaData {
-    fn deserialize(binary: &Vec<u8>) -> Self {
-        let name_size = binary[0] as usize * 0x100 + binary[1] as usize;
-        let name = match std::str::from_utf8(&binary[2..name_size + 2]) {
-            Ok(s) => String::from(s),
-            Err(_) => String::from("Untitle.txt"),
-        };
-        let type_size = binary[name_size + 2];
-
-        let is_file;
-        let is_dir;
-        let is_symlink;
-        match type_size & 0x80 {
-            0 => is_file = false,
-            _ => is_file = true,
-        }
-        match type_size & 0x40 {
-            0 => is_dir = false,
-            _ => is_dir = true,
-        }
-        match type_size & 0x20 {
-            0 => is_symlink = false,
-            _ => is_symlink = true,
-        }
-
-        let type_size_index = (type_size & 0xF) as usize;
-        let mut size: u64 = 0;
-        let mut coef = 1;
-        for i in &binary[name_size + 3..name_size + type_size_index + 3] {
-            size += *i as u64 * coef;
-            coef *= 0x100;
-        }
-
-        let checksum = match std::str::from_utf8(
-            &binary[name_size + type_size_index + 3..name_size + type_size_index + 3 + 32],
-        ) {
-            Ok("00000000000000000000000000000000") => None,
-            Ok(c) => Some(c.to_string()),
-            Err(_) => None,
-        };
-
-        MetaData {
-            name: PathBuf::from(&name).file_stem().unwrap().to_os_string(),
-            extension: PathBuf::from(&name).extension().unwrap().to_os_string(),
-            size: size,
-            is_file: is_file,
-            is_dir: is_dir,
-            is_symlink: is_symlink,
-            checksum: checksum,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
     use std::ops::Deref;
     use std::{fs, path::PathBuf};
 
-    use crate::serialize::deserializable::Deserialize;
-    use crate::serialize::serializable::Serialize;
     use crate::test_util::setup;
     use crate::test_util::setup::{ORIGINAL_FILE1, ORIGINAL_FILE2};
 

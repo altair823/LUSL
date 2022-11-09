@@ -1,9 +1,9 @@
+use super::{meta::MetaData, BUFFERS_SIZE};
 use std::{
     fs::{File, OpenOptions},
-    io::{self, BufReader, BufRead, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
 };
-use super::{BUFFERS_SIZE, meta::MetaData, serializable::Serialize};
 
 /// Find all files in the root directory in a recursive way.
 /// The hidden files started with `.` will be not inclused in result.
@@ -41,7 +41,6 @@ pub fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
 }
 
 pub struct Manager {
-    original_root_path: PathBuf,
     original_file_list: Vec<PathBuf>,
     result: File,
 }
@@ -57,7 +56,6 @@ impl Manager {
         }
         File::create(&result_path)?;
         Ok(Manager {
-            original_root_path: PathBuf::from(original_root.as_ref()),
             original_file_list: get_file_list(original_root)?,
             result: OpenOptions::new()
                 .append(true)
@@ -78,7 +76,7 @@ impl Manager {
             loop {
                 let length = {
                     let buffer = buffer_reader.fill_buf()?;
-    
+
                     self.result.write(buffer)?;
                     buffer.len()
                 };
@@ -90,55 +88,38 @@ impl Manager {
         }
         Ok(())
     }
+
+    pub fn deserialize<T: AsRef<Path>>(serialized_file: T, restore_path: T) -> io::Result<()> {
+        let file = File::open(serialized_file)?;
+        let mut reader = BufReader::with_capacity(BUFFERS_SIZE, file);
+        let mut buffer;
+        let mut remain_byte = BUFFERS_SIZE;
+        loop {
+            buffer = reader.fill_buf()?;
+            
+            let result;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::serialize::serializable::Serialize;
-
-    use super::super::super::test_util::setup::ORIGINAL_FILE1;
-    use super::super::meta;
+    use super::{super::super::test_util::setup::ORIGINAL_FILE1, Manager};
     use std::{
-        fs::{self, File},
-        io::{BufRead, BufReader, Write},
+        fs::File,
+        io::{BufRead, BufReader},
         path::PathBuf,
     };
 
     #[test]
     fn serialize_file_with_metadata() {
-        let original_path = PathBuf::from(ORIGINAL_FILE1);
-        let test_path = PathBuf::from("tests/test.bin");
-        if test_path.is_file() {
-            fs::remove_file(&test_path).unwrap();
-        }
-        fs::File::create(&test_path).unwrap();
-        let metadata = meta::MetaData::from(&original_path);
-        let binary = metadata.serialize();
-
-        let mut file = fs::OpenOptions::new()
-            .append(true)
-            .write(true)
-            .open(&test_path)
-            .unwrap();
-        file.write(&binary).unwrap();
-
-        let original_file = File::open(&original_path).unwrap();
-        let buffer_size = 128;
-        let mut buf = BufReader::with_capacity(buffer_size, original_file);
-
-        loop {
-            let length = {
-                let buffer = buf.fill_buf().unwrap();
-
-                file.write(buffer).unwrap();
-                buffer.len()
-            };
-            if length == 0 {
-                break;
-            }
-            buf.consume(length);
-        }
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("test.bin");
+        let mut manager = Manager::new(original, result).unwrap();
+        manager.serialize().unwrap();
     }
 
     #[test]
