@@ -9,7 +9,7 @@ mod tests {
     use md5::{self, Digest};
 
     use super::test_util::setup;
-    use crate::{test_util::{get_original_md5, get_result_md5}};
+    use crate::test_util::{get_original_md5, get_result_md5};
 
     #[test]
     fn md5_test() {
@@ -17,10 +17,7 @@ mod tests {
         let mut hasher = md5::Md5::new();
         hasher.update(s);
         let a = hasher.finalize();
-        assert_eq!(
-            format!("{:x}", a),
-            "fc3ff98e8c6a0d3087d515c0473f8677"
-        );
+        assert_eq!(format!("{:x}", a), "fc3ff98e8c6a0d3087d515c0473f8677");
 
         let original_hash = get_original_md5();
 

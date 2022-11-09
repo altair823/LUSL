@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{BufReader, BufRead};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::hash;
@@ -8,7 +8,7 @@ use crate::serialize::deserializable::Deserialize;
 use crate::serialize::serializable::Serialize;
 
 use md5::digest::core_api::CoreWrapper;
-use md5::{Md5, Digest, Md5Core};
+use md5::{Digest, Md5, Md5Core};
 
 const CAPACITY: usize = 128;
 
@@ -32,7 +32,7 @@ impl MetaData {
             is_file: false,
             is_dir: false,
             is_symlink: false,
-            checksum: None, 
+            checksum: None,
         }
     }
 
@@ -140,7 +140,7 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
                     },
                     checksum: {
                         let mut hasher = Md5::new();
-                        let mut buf_reader=  BufReader::with_capacity(CAPACITY, file);
+                        let mut buf_reader = BufReader::with_capacity(CAPACITY, file);
                         loop {
                             let length = {
                                 let buf = buf_reader.fill_buf().unwrap();

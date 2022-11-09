@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use md5::{Md5, Digest};
+use md5::{Digest, Md5};
 
 pub fn make_md5_from_file<O: AsRef<Path>>(dir: O) -> String {
     let data = fs::read(dir).unwrap();
@@ -26,7 +26,7 @@ where
         hasher.update(data);
         hashes.insert(
             String::from(OsString::from(p.file_name().unwrap()).to_str().unwrap()),
-            format!("{:x}", hasher.finalize())
+            format!("{:x}", hasher.finalize()),
         );
     }
     hashes

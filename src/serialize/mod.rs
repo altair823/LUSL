@@ -1,4 +1,6 @@
 mod deserializable;
-mod serializable;
+pub mod manager;
 pub mod meta;
-pub mod file;
+mod serializable;
+
+const BUFFERS_SIZE: usize = 512;
