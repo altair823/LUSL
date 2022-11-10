@@ -1,3 +1,4 @@
-pub mod manager;
+pub mod deserializer;
 pub mod meta;
+pub mod serializer;
 const BUFFERS_SIZE: usize = 16;

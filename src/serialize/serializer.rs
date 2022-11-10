@@ -40,12 +40,12 @@ pub fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
     Ok(image_list)
 }
 
-pub struct Manager {
+pub struct Serializer {
     original_file_list: Vec<PathBuf>,
     result: File,
 }
 
-impl Manager {
+impl Serializer {
     pub fn new<T: AsRef<Path>>(original_root: T, result_path: T) -> io::Result<Self> {
         let result_path = PathBuf::from(result_path.as_ref());
         if result_path.is_file() {
@@ -55,7 +55,7 @@ impl Manager {
             ));
         }
         File::create(&result_path)?;
-        Ok(Manager {
+        Ok(Serializer {
             original_file_list: get_file_list(original_root)?,
             result: OpenOptions::new()
                 .append(true)
@@ -88,37 +88,22 @@ impl Manager {
         }
         Ok(())
     }
-
-    pub fn deserialize<T: AsRef<Path>>(serialized_file: T, restore_path: T) -> io::Result<()> {
-        let file = File::open(serialized_file)?;
-        let mut reader = BufReader::with_capacity(BUFFERS_SIZE, file);
-        let mut buffer;
-        let mut remain_byte = BUFFERS_SIZE;
-        loop {
-            buffer = reader.fill_buf()?;
-            
-            let result;
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use super::{super::super::test_util::setup::ORIGINAL_FILE1, Manager};
+    use super::{super::super::test_util::setup::ORIGINAL_FILE1, Serializer};
     use std::{
         fs::File,
         io::{BufRead, BufReader},
         path::PathBuf,
     };
 
-    #[test]
     fn serialize_file_with_metadata() {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("test.bin");
-        let mut manager = Manager::new(original, result).unwrap();
+        let mut manager = Serializer::new(original, result).unwrap();
         manager.serialize().unwrap();
     }
 

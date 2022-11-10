@@ -3,15 +3,13 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use md5::digest::core_api::CoreWrapper;
-use md5::{Digest, Md5, Md5Core};
+use md5::{Digest, Md5};
 
 const CAPACITY: usize = 128;
 
 #[derive(Debug)]
 pub struct MetaData {
-    name: OsString,
-    extension: OsString,
+    path: PathBuf,
     size: u64,
     is_file: bool,
     is_dir: bool,
@@ -22,8 +20,7 @@ pub struct MetaData {
 impl MetaData {
     pub fn new() -> MetaData {
         MetaData {
-            name: OsString::new(),
-            extension: OsString::new(),
+            path: PathBuf::new(),
             size: 0,
             is_file: false,
             is_dir: false,
@@ -33,23 +30,16 @@ impl MetaData {
     }
 
     pub fn with_data(
-        filename: String,
+        filepath: PathBuf,
         size: u64,
         is_file: bool,
         is_dir: bool,
         is_symlink: bool,
         checksum: String,
     ) -> Self {
-        let filename = PathBuf::from(filename);
+        let filepath = PathBuf::from(filepath);
         MetaData {
-            name: match filename.file_stem() {
-                Some(f) => f.to_os_string(),
-                None => OsString::new(),
-            },
-            extension: match filename.extension() {
-                Some(e) => e.to_os_string(),
-                None => OsString::new(),
-            },
+            path: filepath,
             size: size,
             is_file: is_file,
             is_dir: is_dir,
@@ -60,12 +50,10 @@ impl MetaData {
 
     fn name_ex_to_binary(&self) -> Vec<u8> {
         let mut binary: Vec<u8> = Vec::new();
-        let mut name = self.name.to_str().unwrap().to_string();
-        while name.len() + self.extension.len() > u16::MAX.into() {
+        let mut name = self.path.to_str().unwrap().to_string();
+        while name.len() > u16::MAX.into() {
             name.pop();
         }
-        name.push('.');
-        name.push_str(self.extension.to_str().unwrap());
         let length: u16 = name.len().try_into().unwrap();
         let length = length.to_be_bytes();
         binary.push(length[0]);
@@ -100,11 +88,7 @@ impl MetaData {
                 break;
             }
         }
-        if (self.size.to_le_bytes().len() - index) as u8 > 15 {
-            flag_and_size += 15;
-        } else {
-            flag_and_size += (self.size.to_le_bytes().len() - index) as u8;
-        }
+        flag_and_size += (self.size.to_le_bytes().len() - index) as u8;
         binary.push(flag_and_size);
         for i in &self.size.to_le_bytes()[..self.size.to_le_bytes().len() - index] {
             binary.push(*i);
@@ -179,8 +163,7 @@ impl MetaData {
         };
 
         MetaData {
-            name: PathBuf::from(&name).file_stem().unwrap().to_os_string(),
-            extension: PathBuf::from(&name).extension().unwrap().to_os_string(),
+            path: PathBuf::from(name),
             size: size,
             is_file: is_file,
             is_dir: is_dir,
@@ -195,14 +178,7 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
         match File::open(&file_path) {
             Ok(file) => {
                 return MetaData {
-                    name: match file_path.as_ref().file_stem() {
-                        Some(s) => s.to_os_string(),
-                        None => OsString::new(),
-                    },
-                    extension: match file_path.as_ref().extension() {
-                        Some(s) => s.to_os_string(),
-                        None => OsString::new(),
-                    },
+                    path: file_path.as_ref().to_path_buf(),
                     size: match file.metadata() {
                         Ok(m) => m.len(),
                         Err(_) => 0,
@@ -245,8 +221,7 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
 
 impl PartialEq for MetaData {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && self.extension == other.extension
+        self.path == other.path
             && self.size == other.size
             && self.is_file == other.is_file
             && self.is_dir == other.is_dir
@@ -290,6 +265,29 @@ mod tests {
             result_metadata_vec.push(meta);
         }
 
+        // path clearance
+        let original_metadata_vec: Vec<MetaData> = original_metadata_vec
+            .iter()
+            .map(|m| MetaData {
+                path: PathBuf::from(m.path.file_name().unwrap()),
+                size: m.size,
+                is_file: m.is_file,
+                is_dir: m.is_dir,
+                is_symlink: m.is_symlink,
+                checksum: Some(m.checksum.clone().unwrap()),
+            })
+            .collect();
+        let result_metadata_vec: Vec<MetaData> = result_metadata_vec
+            .iter()
+            .map(|m| MetaData {
+                path: PathBuf::from(m.path.file_name().unwrap()),
+                size: m.size,
+                is_file: m.is_file,
+                is_dir: m.is_dir,
+                is_symlink: m.is_symlink,
+                checksum: Some(m.checksum.clone().unwrap()),
+            })
+            .collect();
         assert_eq!(original_metadata_vec, result_metadata_vec);
 
         setup::clean(dir_env);
@@ -300,13 +298,14 @@ mod tests {
         let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
         let meta2 = MetaData::from(&PathBuf::from(ORIGINAL_FILE2));
         assert_eq!(meta1.serialize()[0], 0);
-        assert_eq!(meta1.serialize()[1], 25);
+        assert_eq!(meta1.serialize()[1], 52);
         assert_eq!(meta2.serialize()[0], 0);
-        assert_eq!(meta2.serialize()[1], 10);
+        assert_eq!(meta2.serialize()[1], 37);
 
-        let expected_meta1_bi: [u8; 25] = [
-            98, 111, 97, 114, 100, 45, 103, 52, 51, 57, 54, 56, 102, 101, 101, 99, 95, 49, 57, 50,
-            48, 46, 106, 112, 103,
+        let expected_meta1_bi: [u8; 52] = [
+            116, 101, 115, 116, 115, 47, 111, 114, 105, 103, 105, 110, 97, 108, 95, 105, 109, 97,
+            103, 101, 115, 47, 100, 105, 114, 49, 47, 98, 111, 97, 114, 100, 45, 103, 52, 51, 57,
+            54, 56, 102, 101, 101, 99, 95, 49, 57, 50, 48, 46, 106, 112, 103,
         ];
         let meta1_binary = meta1.serialize();
         let type_size_index = meta1_binary[0] as usize * 0x100 + meta1_binary[1] as usize;
@@ -314,7 +313,11 @@ mod tests {
             meta1.serialize().deref()[2..type_size_index + 2],
             expected_meta1_bi
         );
-        let expected_meta2_bi: [u8; 10] = [237, 143, 173, 235, 176, 156, 46, 106, 112, 103];
+        let expected_meta2_bi: [u8; 37] = [
+            116, 101, 115, 116, 115, 47, 111, 114, 105, 103, 105, 110, 97, 108, 95, 105, 109, 97,
+            103, 101, 115, 47, 100, 105, 114, 49, 47, 237, 143, 173, 235, 176, 156, 46, 106, 112,
+            103,
+        ];
         let meta2_binary = meta2.serialize();
         let type_size_index = meta2_binary[0] as usize * 0x100 + meta2_binary[1] as usize;
         assert_eq!(
