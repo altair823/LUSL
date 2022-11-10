@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 
-const CAPACITY: usize = 128;
+const HASH_CHUNK_SIZE: usize = 128;
 
 #[derive(Debug)]
 pub struct MetaData {
@@ -197,7 +197,7 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
                     },
                     checksum: {
                         let mut hasher = Md5::new();
-                        let mut buf_reader = BufReader::with_capacity(CAPACITY, file);
+                        let mut buf_reader = BufReader::with_capacity(HASH_CHUNK_SIZE, file);
                         loop {
                             let length = {
                                 let buf = buf_reader.fill_buf().unwrap();

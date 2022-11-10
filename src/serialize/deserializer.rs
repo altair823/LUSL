@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    fs::{File, self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
 };
@@ -105,34 +105,45 @@ impl Deserialize {
             fs::create_dir_all(self.restore_path.join(&name).parent().unwrap()).unwrap();
             File::create(self.restore_path.join(&name)).unwrap();
             let mut file = OpenOptions::new()
-            .append(true)
-            .write(true)
-            .open(file_path)?;
+                .append(true)
+                .write(true)
+                .open(file_path)?;
             let mut counter = buffer.len();
-            let mut temp = Vec::from(buffer.clone());
-            file.write(&temp)?;
+            file.write(&Vec::from(buffer.clone()))?;
 
-            counter += buffer.len();
+            //counter += buffer.len();
             buffer.clear();
             let size = size as usize;
-            while counter < size {
+            loop {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
-                let temp = Vec::from(buffer.clone());
-                file.write(&temp)?;
                 counter += buffer.len();
+                if counter > size {
+                    file.write(&Vec::from(buffer.clone())[..BUFFERS_SIZE - (counter - size)])
+                        .unwrap();
+                    for _ in 0..BUFFERS_SIZE - (counter - size) {
+                        buffer.pop_front();
+                    }
+                    break;
+                }
+
+                file.write(&Vec::from(buffer.clone()))?;
                 buffer.clear();
+                if counter == size {
+                    break;
+                }
             }
-            buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
-            reader.consume(buffer.len());
-            let temp = Vec::from(buffer.clone());
-            file.write(&temp[..counter - size]).unwrap();
-            for i in 0..counter - size {
-                buffer.pop_front();
-            }
+            // buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
+            // reader.consume(buffer.len());
 
             if buffer.len() == 0 {
-                break;
+                buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
+                reader.consume(buffer.len());
+                if buffer.len() == 0 {
+                    break;
+                } else {
+                    continue;
+                }
             }
         }
 
@@ -149,7 +160,7 @@ mod tests {
     fn deserialize_file_test() {
         let serialized_file = PathBuf::from("test.bin");
         let restored = PathBuf::from("restored");
-        let mut manager = Deserialize::new(serialized_file, restored);
+        let manager = Deserialize::new(serialized_file, restored);
         manager.deserialize().unwrap();
     }
 }

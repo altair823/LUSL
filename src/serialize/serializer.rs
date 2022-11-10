@@ -100,6 +100,7 @@ mod tests {
         path::PathBuf,
     };
 
+    #[test]
     fn serialize_file_with_metadata() {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("test.bin");
