@@ -85,6 +85,7 @@ impl Serializer {
                 }
                 buffer_reader.consume(length);
             }
+            println!("{:?} serializing complete!", &file);
         }
         Ok(())
     }
