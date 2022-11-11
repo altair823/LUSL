@@ -7,14 +7,14 @@ use std::{
 
 use super::BUFFERS_SIZE;
 
-struct Deserialize {
+pub struct Deserializer {
     serialized_file_path: PathBuf,
     restore_path: PathBuf,
 }
 
-impl Deserialize {
+impl Deserializer {
     pub fn new<T: AsRef<Path>>(serialized_file: T, restore_path: T) -> Self {
-        Deserialize {
+        Deserializer {
             serialized_file_path: serialized_file.as_ref().to_path_buf(),
             restore_path: restore_path.as_ref().to_path_buf(),
         }
@@ -136,6 +136,8 @@ impl Deserialize {
             // buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
             // reader.consume(buffer.len());
 
+            println!("{} deserialize complete!", name);
+
             if buffer.len() == 0 {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
@@ -160,7 +162,7 @@ mod tests {
     fn deserialize_file_test() {
         let serialized_file = PathBuf::from("test.bin");
         let restored = PathBuf::from("restored");
-        let manager = Deserialize::new(serialized_file, restored);
+        let manager = Deserializer::new(serialized_file, restored);
         manager.deserialize().unwrap();
     }
 }

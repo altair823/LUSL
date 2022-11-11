@@ -18,4 +18,12 @@ mod tests {
         let mut serializer = serializer::Serializer::new(original, result).unwrap();
         serializer.serialize().unwrap();
     }
+
+    #[test]
+    fn a() {
+        let serial = PathBuf::from("실록.srl");
+        let restore = PathBuf::from("restored");
+        let deserializer = deserializer::Deserializer::new(serial, restore);
+        deserializer.deserialize().unwrap();
+    }
 }
