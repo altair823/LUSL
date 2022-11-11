@@ -8,6 +8,11 @@ use std::{
 /// Find all files in the root directory in a recursive way.
 /// The hidden files started with `.` will be not inclused in result.
 pub fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
+    let default = PathBuf::from("/");
+    let parent = match root.as_ref().parent() {
+        Some(p) => p,
+        None => &default,
+    };
     let mut image_list: Vec<PathBuf> = Vec::new();
     let mut file_list: Vec<PathBuf> = root
         .as_ref()
@@ -41,6 +46,7 @@ pub fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
 }
 
 pub struct Serializer {
+    parent: PathBuf,
     original_file_list: Vec<PathBuf>,
     result: File,
 }
@@ -56,6 +62,7 @@ impl Serializer {
         }
         File::create(&result_path)?;
         Ok(Serializer {
+            parent: original_root.as_ref().parent().unwrap().to_path_buf(),
             original_file_list: get_file_list(original_root)?,
             result: OpenOptions::new()
                 .append(true)
@@ -69,7 +76,8 @@ impl Serializer {
             let original_file = File::open(file)?;
 
             // Write metadata.
-            let metadata = MetaData::from(file);
+            let mut metadata = MetaData::from(file);
+            metadata.strip_prifix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
             let mut buffer_reader = BufReader::with_capacity(BUFFERS_SIZE, original_file);

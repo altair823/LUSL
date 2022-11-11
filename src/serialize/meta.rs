@@ -48,6 +48,10 @@ impl MetaData {
         }
     }
 
+    pub fn strip_prifix<T: AsRef<Path>>(&mut self, root: T) {
+        self.path = self.path.strip_prefix(root).unwrap().to_path_buf()
+    }
+
     fn name_ex_to_binary(&self) -> Vec<u8> {
         let mut binary: Vec<u8> = Vec::new();
         let mut name = self.path.to_str().unwrap().to_string();
