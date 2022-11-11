@@ -239,14 +239,12 @@ impl PartialEq for MetaData {
 mod tests {
 
     use std::path::PathBuf;
-    use std::{fs, ops::Deref};
 
     use crate::serialize::get_file_list;
 
     use super::MetaData;
 
     const ORIGINAL_FILE: &str = "tests/original_images/dir1/board-g43968feec_1920.jpg";
-    const RESULT_FILE: &str = "aboratory-g8f9267f5f_1920.jpg";
 
     #[test]
     fn metadata_compare_test() {
@@ -369,7 +367,7 @@ mod tests {
         let meta1_binary = meta.serialize();
         let type_size_index = meta1_binary[0] as usize * 0x100 + meta1_binary[1] as usize;
         assert_eq!(
-            meta.serialize().deref()[2..type_size_index + 2],
+            &meta.serialize()[2..type_size_index + 2],
             expected_meta1_bi
         );
     }
@@ -390,7 +388,7 @@ mod tests {
         // 131 means it is a file, and the size takes 3 bytes.
         // And size bytes are little endian.
         assert_eq!(
-            binary.deref()[name_end_index + 3..name_end_index + type_size_index + 3],
+            &binary[name_end_index + 3..name_end_index + type_size_index + 3],
             [1, 244, 13]
         );
     }
@@ -410,8 +408,7 @@ mod tests {
         ];
 
         assert_eq!(
-            binary.deref()
-                [name_end_index + type_size_index + 3..name_end_index + type_size_index + 3 + 32],
+            &binary[name_end_index + type_size_index + 3..name_end_index + type_size_index + 3 + 32],
             expected_checksum
         );
     }

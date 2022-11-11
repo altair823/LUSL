@@ -26,7 +26,6 @@ impl Deserializer {
         let file = File::open(&self.serialized_file_path)?;
         let mut reader = BufReader::with_capacity(BUFFERS_SIZE, file);
         let mut buffer = VecDeque::with_capacity(BUFFERS_SIZE);
-        let mut consume_length = 0;
         loop {
             // Restore file name
             while buffer.len() < 2 {
@@ -42,7 +41,7 @@ impl Deserializer {
                 reader.consume(buffer.len());
             }
             let mut name_buffer = Vec::new();
-            for i in 0..name_size {
+            for _ in 0..name_size {
                 name_buffer.push(buffer.pop_front().unwrap());
             }
             let name = match String::from_utf8(name_buffer) {
@@ -64,20 +63,20 @@ impl Deserializer {
                     ))
                 }
             };
-            let is_file;
-            let is_dir;
-            let is_symlink;
+            let _is_file;
+            let _is_dir;
+            let _is_symlink;
             match flag_and_byte_count & 0x80 {
-                0 => is_file = false,
-                _ => is_file = true,
+                0 => _is_file = false,
+                _ => _is_file = true,
             }
             match flag_and_byte_count & 0x40 {
-                0 => is_dir = false,
-                _ => is_dir = true,
+                0 => _is_dir = false,
+                _ => _is_dir = true,
             }
             match flag_and_byte_count & 0x20 {
-                0 => is_symlink = false,
-                _ => is_symlink = true,
+                0 => _is_symlink = false,
+                _ => _is_symlink = true,
             }
             let size_count = (flag_and_byte_count & 0xF) as usize;
 
