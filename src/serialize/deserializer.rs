@@ -5,6 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::serialize::meta::get_checksum;
+
 use super::BUFFERS_SIZE;
 
 pub struct Deserializer {
@@ -107,11 +109,9 @@ impl Deserializer {
             let mut file = OpenOptions::new()
                 .append(true)
                 .write(true)
-                .open(file_path)?;
+                .open(&file_path)?;
             let mut counter = buffer.len();
             file.write(&Vec::from(buffer.clone()))?;
-
-            //counter += buffer.len();
             buffer.clear();
             let size = size as usize;
             loop {
@@ -133,10 +133,18 @@ impl Deserializer {
                     break;
                 }
             }
-            // buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
-            // reader.consume(buffer.len());
 
-            println!("{} deserialize complete!", name);
+            // Verify checksum
+            let file = File::open(&file_path)?;
+            let new_checksum = get_checksum(file);
+            if new_checksum == checksum {
+                println!("{} deserialize complete!", file_path.to_str().unwrap());
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Wrong checksum!!!! {}", file_path.to_str().unwrap()),
+                ));
+            }
 
             if buffer.len() == 0 {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
@@ -155,14 +163,28 @@ impl Deserializer {
 
 #[cfg(test)]
 mod tests {
+    use crate::serialize::serializer::Serializer;
+
     use super::*;
     use std::path::PathBuf;
 
     #[test]
     fn deserialize_file_test() {
-        let serialized_file = PathBuf::from("test.bin");
-        let restored = PathBuf::from("restored");
-        let manager = Deserializer::new(serialized_file, restored);
-        manager.deserialize().unwrap();
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("deserialize_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.serialize().unwrap();
+
+        let serialized_file = PathBuf::from("deserialize_test.bin");
+        let restored = PathBuf::from("deserialize_test_dir");
+        let deserializer = Deserializer::new(serialized_file, restored.clone());
+        deserializer.deserialize().unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+        if restored.is_dir() {
+            fs::remove_dir_all(restored).unwrap();
+        }
     }
 }

@@ -1,6 +1,5 @@
 /target
 Cargo.lock
 .DS_Store
-/tests
 test.bin
 /restored

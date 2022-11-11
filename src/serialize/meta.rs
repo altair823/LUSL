@@ -1,11 +1,28 @@
-use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 
-const HASH_CHUNK_SIZE: usize = 128;
+const HASH_CHUNK_SIZE: usize = 1024;
+
+pub fn get_checksum(file: File) -> String {
+    let mut hasher = Md5::new();
+    let mut buf_reader = BufReader::with_capacity(HASH_CHUNK_SIZE, file);
+    loop {
+        let length = {
+            let buf = buf_reader.fill_buf().unwrap();
+            hasher.update(buf);
+            buf.len()
+        };
+        if length == 0 {
+            break;
+        }
+        buf_reader.consume(length);
+    }
+    let a = hasher.finalize();
+    format!("{:x}", a)
+}
 
 #[derive(Debug)]
 pub struct MetaData {
@@ -199,23 +216,7 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
                         Ok(m) => m.is_symlink(),
                         Err(_) => false,
                     },
-                    checksum: {
-                        let mut hasher = Md5::new();
-                        let mut buf_reader = BufReader::with_capacity(HASH_CHUNK_SIZE, file);
-                        loop {
-                            let length = {
-                                let buf = buf_reader.fill_buf().unwrap();
-                                hasher.update(buf);
-                                buf.len()
-                            };
-                            if length == 0 {
-                                break;
-                            }
-                            buf_reader.consume(length);
-                        }
-                        let a = hasher.finalize();
-                        Some(format!("{:x}", a))
-                    },
+                    checksum: { Some(get_checksum(file)) },
                 }
             }
             Err(_) => return MetaData::new(),
@@ -237,38 +238,26 @@ impl PartialEq for MetaData {
 #[cfg(test)]
 mod tests {
 
-    use std::ops::Deref;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
+    use std::{fs, ops::Deref};
 
-    use crate::test_util::setup;
-    use crate::test_util::setup::{ORIGINAL_FILE1, ORIGINAL_FILE2};
+    use crate::serialize::get_file_list;
 
-    use super::{super::super::test_util, MetaData};
-    use fs_extra::dir;
+    use super::MetaData;
+
+    const ORIGINAL_FILE: &str = "tests/original_images/dir1/board-g43968feec_1920.jpg";
+    const RESULT_FILE: &str = "aboratory-g8f9267f5f_1920.jpg";
 
     #[test]
     fn metadata_compare_test() {
-        let dir_env = test_util::setup::make_dir_env();
+        let original = PathBuf::from("tests");
 
-        let mut copy_option = dir::CopyOptions::new();
-        copy_option.overwrite = true;
-        dir::copy(&dir_env.original, &dir_env.result, &copy_option).unwrap();
-
-        let original_file_vec = test_util::get_file_list(&dir_env.original).unwrap();
-        let result_file_vec = test_util::get_file_list(&dir_env.result).unwrap();
+        let original_file_vec = get_file_list(&original).unwrap();
         let mut original_metadata_vec = Vec::new();
         for f in original_file_vec {
-            let mut meta = MetaData::from(&f);
-            let data = fs::read(f).unwrap();
+            let meta = MetaData::from(&f);
             original_metadata_vec.push(meta);
         }
-        let mut result_metadata_vec = Vec::new();
-        for f in result_file_vec {
-            let mut meta = MetaData::from(&f);
-            let data = fs::read(f).unwrap();
-            result_metadata_vec.push(meta);
-        }
-
         // path clearance
         let original_metadata_vec: Vec<MetaData> = original_metadata_vec
             .iter()
@@ -281,58 +270,113 @@ mod tests {
                 checksum: Some(m.checksum.clone().unwrap()),
             })
             .collect();
-        let result_metadata_vec: Vec<MetaData> = result_metadata_vec
-            .iter()
-            .map(|m| MetaData {
-                path: PathBuf::from(m.path.file_name().unwrap()),
-                size: m.size,
-                is_file: m.is_file,
-                is_dir: m.is_dir,
-                is_symlink: m.is_symlink,
-                checksum: Some(m.checksum.clone().unwrap()),
-            })
-            .collect();
+        let result_metadata_vec = Vec::from([
+            MetaData {
+                path: PathBuf::from("colorful-2174045.png"),
+                size: 464447,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("4e42993bfd2756df48b646d68433db1e")),
+            },
+            MetaData {
+                path: PathBuf::from("capsules-g869437822_1920.jpg"),
+                size: 371728,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("60e191a914756ff7ae259e33f40f20da")),
+            },
+            MetaData {
+                path: PathBuf::from("board-g43968feec_1920.jpg"),
+                size: 914433,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("37ca14866812327e1776d8cbb250501c")),
+            },
+            MetaData {
+                path: PathBuf::from("laboratory-g8f9267f5f_1920.jpg"),
+                size: 418648,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("0bc9b40f01fd8d4c0deb5a76f430a778")),
+            },
+            MetaData {
+                path: PathBuf::from("폭발.jpg"),
+                size: 562560,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("4753aff9b06a34832ad1de0a69d5dcd3")),
+            },
+            MetaData {
+                path: PathBuf::from("digitization-1755812_1920.jpg"),
+                size: 468460,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("4b6cab47e9193a4aebe4c8c6b7c88c1b")),
+            },
+            MetaData {
+                path: PathBuf::from("syringe-ge5e95bfe6_1920.jpg"),
+                size: 253304,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("a7385d8a719c3036a857e21225c5bd6b")),
+            },
+            MetaData {
+                path: PathBuf::from("books-g6617d4d97_1920.jpg"),
+                size: 564004,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("65aee1442129f56a0a6157c6b55f80c9")),
+            },
+            MetaData {
+                path: PathBuf::from("test-pattern-152459.png"),
+                size: 55262,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("a09d4eab0326ba5403369035531f9308")),
+            },
+            MetaData {
+                path: PathBuf::from("tv-g87676cdfb_1280.png"),
+                size: 1280855,
+                is_file: true,
+                is_dir: false,
+                is_symlink: false,
+                checksum: Some(String::from("91517821bc6851b0d9abec5d5adea961")),
+            },
+        ]);
         assert_eq!(original_metadata_vec, result_metadata_vec);
-
-        setup::clean(dir_env);
     }
 
     #[test]
     fn name_serialize_test() {
-        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
-        let meta2 = MetaData::from(&PathBuf::from(ORIGINAL_FILE2));
-        assert_eq!(meta1.serialize()[0], 0);
-        assert_eq!(meta1.serialize()[1], 52);
-        assert_eq!(meta2.serialize()[0], 0);
-        assert_eq!(meta2.serialize()[1], 37);
+        let meta = MetaData::from(&PathBuf::from(ORIGINAL_FILE));
+        assert_eq!(meta.serialize()[0], 0);
+        assert_eq!(meta.serialize()[1], 52);
 
         let expected_meta1_bi: [u8; 52] = [
             116, 101, 115, 116, 115, 47, 111, 114, 105, 103, 105, 110, 97, 108, 95, 105, 109, 97,
             103, 101, 115, 47, 100, 105, 114, 49, 47, 98, 111, 97, 114, 100, 45, 103, 52, 51, 57,
             54, 56, 102, 101, 101, 99, 95, 49, 57, 50, 48, 46, 106, 112, 103,
         ];
-        let meta1_binary = meta1.serialize();
+        let meta1_binary = meta.serialize();
         let type_size_index = meta1_binary[0] as usize * 0x100 + meta1_binary[1] as usize;
         assert_eq!(
-            meta1.serialize().deref()[2..type_size_index + 2],
+            meta.serialize().deref()[2..type_size_index + 2],
             expected_meta1_bi
-        );
-        let expected_meta2_bi: [u8; 37] = [
-            116, 101, 115, 116, 115, 47, 111, 114, 105, 103, 105, 110, 97, 108, 95, 105, 109, 97,
-            103, 101, 115, 47, 100, 105, 114, 49, 47, 237, 143, 173, 235, 176, 156, 46, 106, 112,
-            103,
-        ];
-        let meta2_binary = meta2.serialize();
-        let type_size_index = meta2_binary[0] as usize * 0x100 + meta2_binary[1] as usize;
-        assert_eq!(
-            meta2.serialize().deref()[2..type_size_index + 2],
-            expected_meta2_bi
         );
     }
 
     #[test]
     fn flag_size_serialize_test() {
-        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
+        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE));
         let binary = meta1.serialize();
         let name_end_index = binary[0] as usize * 0x100 + binary[1] as usize;
         let type_size = binary[name_end_index + 2];
@@ -353,8 +397,7 @@ mod tests {
 
     #[test]
     fn checksum_serialize_test() {
-        let mut meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
-        let data = fs::read(ORIGINAL_FILE1).unwrap();
+        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE));
 
         let binary = meta1.serialize();
         let name_end_index = binary[0] as usize * 0x100 + binary[1] as usize;
@@ -375,7 +418,7 @@ mod tests {
 
     #[test]
     fn metadata_serialize_test() {
-        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE1));
+        let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE));
         let binary = meta1.serialize();
 
         println!("{:?}", meta1);
