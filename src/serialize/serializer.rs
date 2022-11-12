@@ -34,7 +34,6 @@ impl Serializer {
     pub fn serialize(&mut self) -> io::Result<()> {
         for file in &self.original_file_list {
             let original_file = File::open(file)?;
-            println!("1");
 
             // Write metadata.
             let mut metadata = MetaData::from(file);
