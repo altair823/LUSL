@@ -90,6 +90,7 @@ impl Deserializer {
                 reader.consume(buffer.len());
                 counter += buffer.len();
                 if counter > size {
+                    println!("filename: {} -- counter: {} -- size: {}", file_path.to_str().unwrap(), counter, size);
                     file.write(&Vec::from(buffer.clone())[..BUFFERS_SIZE - (counter - size)])
                         .unwrap();
                     buffer.drain(..BUFFERS_SIZE - (counter - size));
@@ -155,5 +156,19 @@ mod tests {
         if restored.is_dir() {
             fs::remove_dir_all(restored).unwrap();
         }
+    }
+
+    #[test]
+    fn d() {
+        let original = PathBuf::from("/home/pi/testcase");
+        let result = PathBuf::from("/home/pi/deserialize_test.bin");
+        // let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        // serializer.serialize().unwrap();
+
+        let serialized_file = PathBuf::from("/home/pi/deserialize_test.bin");
+        let restored = PathBuf::from("/home/pi/deserialize_test_dir");
+        let deserializer = Deserializer::new(serialized_file, restored.clone());
+        deserializer.deserialize().unwrap();
+        // assert!(&result.is_file());
     }
 }
