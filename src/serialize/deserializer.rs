@@ -7,7 +7,7 @@ use std::{
 
 use crate::serialize::meta::get_checksum;
 
-use super::BUFFERS_SIZE;
+use super::{BUFFERS_SIZE, meta::MetaData};
 
 pub struct Deserializer {
     serialized_file_path: PathBuf,
@@ -27,29 +27,22 @@ impl Deserializer {
         let mut reader = BufReader::with_capacity(BUFFERS_SIZE, file);
         let mut buffer = VecDeque::with_capacity(BUFFERS_SIZE);
         loop {
-            // Restore file name
+            let mut metadata = MetaData::new();
+            // Restore file path
             while buffer.len() < 2 {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
             }
-            let name_size = buffer[0] as usize * 0x100 + buffer[1] as usize;
-            buffer.pop_front();
-            buffer.pop_front();
+            let path_size = buffer[0] as usize * 0x100 + buffer[1] as usize;
+            buffer.drain(..2);
 
-            while buffer.len() < name_size {
+            while buffer.len() < path_size {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
             }
-            let mut name_buffer = Vec::new();
-            for _ in 0..name_size {
-                name_buffer.push(buffer.pop_front().unwrap());
-            }
-            let name = match String::from_utf8(name_buffer) {
-                Ok(n) => n,
-                Err(_) => String::from("untitle.bin"),
-            };
+            metadata.deserialize_path(&buffer.drain(..path_size).collect::<Vec<u8>>());
 
-            // Restore file type and file size
+            // Restore file type
             while buffer.len() < 1 {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
@@ -63,48 +56,27 @@ impl Deserializer {
                     ))
                 }
             };
-            let _is_file;
-            let _is_dir;
-            let _is_symlink;
-            match flag_and_byte_count & 0x80 {
-                0 => _is_file = false,
-                _ => _is_file = true,
-            }
-            match flag_and_byte_count & 0x40 {
-                0 => _is_dir = false,
-                _ => _is_dir = true,
-            }
-            match flag_and_byte_count & 0x20 {
-                0 => _is_symlink = false,
-                _ => _is_symlink = true,
-            }
-            let size_count = (flag_and_byte_count & 0xF) as usize;
+            metadata.deserialize_type(flag_and_byte_count);
 
+            // Restore file size
+            let size_count = (flag_and_byte_count & 0xF) as usize;
             while buffer.len() < size_count {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
             }
-            let mut size: u64 = 0;
-            let mut coef = 1;
-            for _ in 0..size_count {
-                size += buffer.pop_front().unwrap() as u64 * coef;
-                coef *= 0x100;
-            }
+            metadata.deserialize_size(flag_and_byte_count, &buffer.drain(..size_count).collect::<Vec<u8>>());
 
             // Restore checksum
-            let mut checksum = String::new();
             while buffer.len() < 32 {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
             }
-            for _ in 0..32 {
-                checksum.push(buffer.pop_front().unwrap() as char);
-            }
+            metadata.deserialize_checksum(&buffer.drain(..32).collect::<Vec<u8>>());
 
             // Write file
-            let file_path = self.restore_path.join(&name);
-            fs::create_dir_all(self.restore_path.join(&name).parent().unwrap()).unwrap();
-            File::create(self.restore_path.join(&name)).unwrap();
+            let file_path = self.restore_path.join(&metadata.path);
+            fs::create_dir_all(self.restore_path.join(&metadata.path).parent().unwrap()).unwrap();
+            File::create(self.restore_path.join(&metadata.path)).unwrap();
             let mut file = OpenOptions::new()
                 .append(true)
                 .write(true)
@@ -112,7 +84,7 @@ impl Deserializer {
             let mut counter = buffer.len();
             file.write(&Vec::from(buffer.clone()))?;
             buffer.clear();
-            let size = size as usize;
+            let size = metadata.size as usize;
             loop {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
@@ -120,9 +92,7 @@ impl Deserializer {
                 if counter > size {
                     file.write(&Vec::from(buffer.clone())[..BUFFERS_SIZE - (counter - size)])
                         .unwrap();
-                    for _ in 0..BUFFERS_SIZE - (counter - size) {
-                        buffer.pop_front();
-                    }
+                    buffer.drain(..BUFFERS_SIZE - (counter - size));
                     break;
                 }
 
@@ -136,7 +106,7 @@ impl Deserializer {
             // Verify checksum
             let file = File::open(&file_path)?;
             let new_checksum = get_checksum(file);
-            if new_checksum == checksum {
+            if new_checksum == metadata.checksum.unwrap() {
                 println!("{} deserialize complete!", file_path.to_str().unwrap());
             } else {
                 return Err(io::Error::new(

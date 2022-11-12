@@ -4,13 +4,13 @@ use std::{
 };
 
 pub mod deserializer;
-pub mod meta;
+mod meta;
 pub mod serializer;
-const BUFFERS_SIZE: usize = 1024;
+const BUFFERS_SIZE: usize = 8192;
 
 /// Find all files in the root directory in a recursive way.
 /// The hidden files started with `.` will be not inclused in result.
-pub fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
+fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
     let mut image_list: Vec<PathBuf> = Vec::new();
     let mut file_list: Vec<PathBuf> = root
         .as_ref()

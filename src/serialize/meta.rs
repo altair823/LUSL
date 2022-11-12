@@ -24,14 +24,19 @@ pub fn get_checksum(file: File) -> String {
     format!("{:x}", a)
 }
 
+pub fn dir_integrity_check(root: PathBuf, integrity_file: PathBuf) {
+    
+}
+
+
 #[derive(Debug)]
 pub struct MetaData {
-    path: PathBuf,
-    size: u64,
-    is_file: bool,
-    is_dir: bool,
-    is_symlink: bool,
-    checksum: Option<String>,
+    pub path: PathBuf,
+    pub size: u64,
+    pub is_file: bool,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub checksum: Option<String>,
 }
 
 impl MetaData {
@@ -141,6 +146,45 @@ impl MetaData {
         binary.append(&mut self.type_size_to_binary());
         binary.append(&mut self.checksum_to_binary());
         binary
+    }
+
+    pub fn deserialize_path(&mut self, name_binary: &[u8]) {
+        self.path = match String::from_utf8(name_binary.to_vec()) {
+            Ok(n) => PathBuf::from(n),
+            Err(_) => PathBuf::from("untitle.bin"),
+        };
+    }
+    pub fn deserialize_type(&mut self, type_flag: u8) {
+        self.is_file = match type_flag & 0x80 {
+            0 => false,
+            _ => true,
+        };
+        self.is_dir = match type_flag & 0x40 {
+            0 => false,
+            _ => true,
+        };
+        self.is_symlink = match type_flag & 0x20 {
+            0 => false,
+            _ => true,
+        };
+    }
+
+    pub fn deserialize_size(&mut self, size_byte_count: u8, size_binary: &[u8]) {
+        let size_byte_count = (size_byte_count & 0xF) as usize;
+        let mut size: u64 = 0;
+        let mut coef = 1;
+        for i in size_binary {
+            size += *i as u64 * coef;
+            coef *= 0x100;
+        }
+        self.size = size;
+    }
+
+    pub fn deserialize_checksum(&mut self, checksum_binary: &[u8]) {
+        self.checksum = match String::from_utf8(checksum_binary.to_vec()){
+            Ok(c) => Some(c),
+            Err(_) => Some(String::from("00000000000000000000000000000000")),
+        };
     }
 
     pub fn deserialize(binary: &Vec<u8>) -> Self {
@@ -257,7 +301,7 @@ mod tests {
             original_metadata_vec.push(meta);
         }
         // path clearance
-        let original_metadata_vec: Vec<MetaData> = original_metadata_vec
+        let mut original_metadata_vec: Vec<MetaData> = original_metadata_vec
             .iter()
             .map(|m| MetaData {
                 path: PathBuf::from(m.path.file_name().unwrap()),
@@ -268,7 +312,7 @@ mod tests {
                 checksum: Some(m.checksum.clone().unwrap()),
             })
             .collect();
-        let result_metadata_vec = Vec::from([
+        let mut result_metadata_vec = Vec::from([
             MetaData {
                 path: PathBuf::from("colorful-2174045.png"),
                 size: 464447,
@@ -350,6 +394,8 @@ mod tests {
                 checksum: Some(String::from("91517821bc6851b0d9abec5d5adea961")),
             },
         ]);
+        original_metadata_vec.sort_by_key(|m| m.path.clone());
+        result_metadata_vec.sort_by_key(|m| m.path.clone());
         assert_eq!(original_metadata_vec, result_metadata_vec);
     }
 
