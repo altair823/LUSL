@@ -44,7 +44,7 @@ impl MetaData {
         }
     }
 
-    pub fn strip_prifix<T: AsRef<Path>>(&mut self, root: T) {
+    pub fn strip_prefix<T: AsRef<Path>>(&mut self, root: T) {
         self.path = self.path.strip_prefix(root).unwrap().to_path_buf()
     }
 
@@ -125,7 +125,7 @@ impl MetaData {
     pub fn deserialize_path(&mut self, name_binary: &[u8]) {
         self.path = match String::from_utf8(name_binary.to_vec()) {
             Ok(n) => PathBuf::from(n),
-            Err(_) => PathBuf::from("untitle.bin"),
+            Err(_) => PathBuf::from("untitled.bin"),
         };
     }
     pub fn deserialize_type(&mut self, type_flag: u8) {

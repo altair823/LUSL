@@ -1,13 +1,12 @@
 [package]
 name = "lusl"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+authors = ["Kim tae hyeon <kimth0734@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/altair823/file_manager"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 md-5 = "0.10.5"
-chrono = "0.4.22"
-fs_extra = "1.2.0"
-
-[dev-dependencies]

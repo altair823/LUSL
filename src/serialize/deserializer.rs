@@ -15,8 +15,23 @@ use super::meta::MetaData;
 /// 
 /// Call deserialize method for deserialize data file. 
 /// 
-/// # Examples
+/// Checking [MD5](md5) checksum of files and if it is different, occur error. 
 /// 
+/// # Examples
+/// ```
+/// use lusl::{Serializer, Deserializer};
+/// use std::path::PathBuf;
+/// let original = PathBuf::from("tests");
+/// let result = PathBuf::from("serialized2.bin");
+/// let mut serializer = Serializer::new(original, result.clone()).unwrap();
+/// serializer.serialize().unwrap();
+/// let serialized_file = PathBuf::from("serialized2.bin");
+/// let restored = PathBuf::from("deserialized_dir");
+/// let deserializer = Deserializer::new(serialized_file, restored.clone());
+/// deserializer.deserialize().unwrap();
+/// assert!(&result.is_file());
+/// assert!(&restored.is_dir());
+/// ```
 pub struct Deserializer {
     serialized_file_path: PathBuf,
     restore_path: PathBuf,
@@ -38,22 +53,6 @@ impl Deserializer {
     /// 
     /// # Errors
     /// MD5 checksum of deserialized file is different from original checksum. 
-    /// 
-    /// # Examples
-    /// ```
-    /// use lusl::{Serializer, Deserializer};
-    /// use std::path::PathBuf;
-    /// let original = PathBuf::from("tests");
-    /// let result = PathBuf::from("serialized2.bin");
-    /// let mut serializer = Serializer::new(original, result.clone()).unwrap();
-    /// serializer.serialize().unwrap();
-    /// let serialized_file = PathBuf::from("serialized2.bin");
-    /// let restored = PathBuf::from("deserialized_dir");
-    /// let deserializer = Deserializer::new(serialized_file, restored.clone());
-    /// deserializer.deserialize().unwrap();
-    /// assert!(&result.is_file());
-    /// assert!(&restored.is_dir());
-    /// ```
     pub fn deserialize(&self) -> io::Result<()> {
         let file = File::open(&self.serialized_file_path)?;
         let mut reader = BufReader::new(file);

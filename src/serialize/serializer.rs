@@ -60,7 +60,7 @@ impl Serializer {
 
             // Write metadata.
             let mut metadata = MetaData::from(file);
-            metadata.strip_prifix(&self.parent);
+            metadata.strip_prefix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
             let mut buffer_reader = BufReader::new(original_file);
