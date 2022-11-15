@@ -1,9 +1,29 @@
-use super::{get_file_list, meta::MetaData, BUFFERS_SIZE};
+
+use super::{get_file_list, meta::MetaData};
 use std::{
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, self},
     io::{self, BufRead, BufReader, Write},
-    path::{Path, PathBuf},
-};
+    path::{Path, PathBuf}};
+
+///
+/// # Serializer
+/// 
+/// Serializer struct.
+/// 
+/// Call `serialize` method to serialize all directory contents.   
+/// 
+/// # Examples
+/// ```
+/// use lusl::Serializer;
+/// use std::path::PathBuf;
+/// use std::fs;
+/// 
+/// let original = PathBuf::from("tests");
+/// let result = PathBuf::from("serialized1.bin");
+/// let mut serializer = Serializer::new(original, result.clone()).unwrap();
+/// serializer.serialize().unwrap();
+/// assert!(result.is_file());
+/// ```
 
 pub struct Serializer {
     parent: PathBuf,
@@ -12,13 +32,15 @@ pub struct Serializer {
 }
 
 impl Serializer {
+    /// Set original root directory and result path and create Serializer. 
+    /// May create result file. 
     pub fn new<T: AsRef<Path>>(original_root: T, result_path: T) -> io::Result<Self> {
         let result_path = PathBuf::from(result_path.as_ref());
         if result_path.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "The result file already exist!",
-            ));
+            match fs::remove_file(&result_path) {
+                Ok(_) => (),
+                Err(_) => return Err(io::Error::new(io::ErrorKind::AlreadyExists, "file already exists!")),
+            }
         }
         File::create(&result_path)?;
         Ok(Serializer {
@@ -31,6 +53,7 @@ impl Serializer {
         })
     }
 
+    /// Serialize root directory and copy it to result file. 
     pub fn serialize(&mut self) -> io::Result<()> {
         for file in &self.original_file_list {
             let original_file = File::open(file)?;
@@ -69,8 +92,8 @@ mod tests {
     fn serialize_test() {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("serialize_test.bin");
-        let mut manager = Serializer::new(original, result.clone()).unwrap();
-        manager.serialize().unwrap();
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.serialize().unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();

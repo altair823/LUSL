@@ -3,3 +3,5 @@ Cargo.lock
 .DS_Store
 test.bin
 /restored
+/*.bin
+/deserialized_dir/

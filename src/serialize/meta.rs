@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 
-const HASH_CHUNK_SIZE: usize = 128;
-
 pub fn get_checksum(file: File) -> String {
     let mut hasher = Md5::new();
     let mut buf_reader = BufReader::new(file);
@@ -23,8 +21,6 @@ pub fn get_checksum(file: File) -> String {
     let a = hasher.finalize();
     format!("{:x}", a)
 }
-
-
 
 #[derive(Debug)]
 pub struct MetaData {
@@ -45,25 +41,6 @@ impl MetaData {
             is_dir: false,
             is_symlink: false,
             checksum: None,
-        }
-    }
-
-    pub fn with_data(
-        filepath: PathBuf,
-        size: u64,
-        is_file: bool,
-        is_dir: bool,
-        is_symlink: bool,
-        checksum: String,
-    ) -> Self {
-        let filepath = PathBuf::from(filepath);
-        MetaData {
-            path: filepath,
-            size: size,
-            is_file: is_file,
-            is_dir: is_dir,
-            is_symlink: is_symlink,
-            checksum: Some(checksum),
         }
     }
 
@@ -166,8 +143,7 @@ impl MetaData {
         };
     }
 
-    pub fn deserialize_size(&mut self, size_byte_count: u8, size_binary: &[u8]) {
-        let size_byte_count = (size_byte_count & 0xF) as usize;
+    pub fn deserialize_size(&mut self, size_binary: &[u8]) {
         let mut size: u64 = 0;
         let mut coef = 1;
         for i in size_binary {
@@ -178,60 +154,10 @@ impl MetaData {
     }
 
     pub fn deserialize_checksum(&mut self, checksum_binary: &[u8]) {
-        self.checksum = match String::from_utf8(checksum_binary.to_vec()){
+        self.checksum = match String::from_utf8(checksum_binary.to_vec()) {
             Ok(c) => Some(c),
             Err(_) => Some(String::from("00000000000000000000000000000000")),
         };
-    }
-
-    pub fn deserialize(binary: &Vec<u8>) -> Self {
-        let name_size = binary[0] as usize * 0x100 + binary[1] as usize;
-        let name = match std::str::from_utf8(&binary[2..name_size + 2]) {
-            Ok(s) => String::from(s),
-            Err(_) => String::from("Untitle.txt"),
-        };
-        let type_size = binary[name_size + 2];
-
-        let is_file;
-        let is_dir;
-        let is_symlink;
-        match type_size & 0x80 {
-            0 => is_file = false,
-            _ => is_file = true,
-        }
-        match type_size & 0x40 {
-            0 => is_dir = false,
-            _ => is_dir = true,
-        }
-        match type_size & 0x20 {
-            0 => is_symlink = false,
-            _ => is_symlink = true,
-        }
-
-        let type_size_index = (type_size & 0xF) as usize;
-        let mut size: u64 = 0;
-        let mut coef = 1;
-        for i in &binary[name_size + 3..name_size + type_size_index + 3] {
-            size += *i as u64 * coef;
-            coef *= 0x100;
-        }
-
-        let checksum = match std::str::from_utf8(
-            &binary[name_size + type_size_index + 3..name_size + type_size_index + 3 + 32],
-        ) {
-            Ok("00000000000000000000000000000000") => None,
-            Ok(c) => Some(c.to_string()),
-            Err(_) => None,
-        };
-
-        MetaData {
-            path: PathBuf::from(name),
-            size: size,
-            is_file: is_file,
-            is_dir: is_dir,
-            is_symlink: is_symlink,
-            checksum: checksum,
-        }
     }
 }
 
@@ -279,11 +205,11 @@ impl PartialEq for MetaData {
 #[cfg(test)]
 mod tests {
 
-    use std::{path::PathBuf, fs::File};
+    use std::{collections::VecDeque, path::PathBuf};
 
     use crate::serialize::get_file_list;
 
-    use super::{MetaData, get_checksum};
+    use super::MetaData;
 
     const ORIGINAL_FILE: &str = "tests/original_images/dir1/board-g43968feec_1920.jpg";
 
@@ -409,10 +335,7 @@ mod tests {
         ];
         let meta1_binary = meta.serialize();
         let type_size_index = meta1_binary[0] as usize * 0x100 + meta1_binary[1] as usize;
-        assert_eq!(
-            &meta.serialize()[2..type_size_index + 2],
-            expected_meta1_bi
-        );
+        assert_eq!(&meta.serialize()[2..type_size_index + 2], expected_meta1_bi);
     }
 
     #[test]
@@ -451,7 +374,8 @@ mod tests {
         ];
 
         assert_eq!(
-            &binary[name_end_index + type_size_index + 3..name_end_index + type_size_index + 3 + 32],
+            &binary
+                [name_end_index + type_size_index + 3..name_end_index + type_size_index + 3 + 32],
             expected_checksum
         );
     }
@@ -459,11 +383,28 @@ mod tests {
     #[test]
     fn metadata_serialize_test() {
         let meta1 = MetaData::from(&PathBuf::from(ORIGINAL_FILE));
-        let binary = meta1.serialize();
+        let mut binary = VecDeque::from_iter(meta1.serialize());
 
         println!("{:?}", meta1);
 
-        let meta2 = MetaData::deserialize(&binary);
+        let mut meta2 = MetaData::new();
+
+        // Restore file path
+        let path_size = binary[0] as usize * 0x100 + binary[1] as usize;
+        binary.drain(..2);
+        meta2.deserialize_path(&binary.drain(..path_size).collect::<Vec<u8>>());
+
+        // Restore file type
+        let flag_and_byte_count = binary.pop_front().unwrap();
+        meta2.deserialize_type(flag_and_byte_count);
+
+        // Restore file size
+        let size_count = (flag_and_byte_count & 0xF) as usize;
+        meta2.deserialize_size(&binary.drain(..size_count).collect::<Vec<u8>>());
+
+        // Restore checksum
+        meta2.deserialize_checksum(&binary.drain(..32).collect::<Vec<u8>>());
+
         assert_eq!(meta1, meta2);
     }
 }

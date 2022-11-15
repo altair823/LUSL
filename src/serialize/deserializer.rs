@@ -7,14 +7,24 @@ use std::{
 
 use crate::serialize::meta::get_checksum;
 
-use super::{BUFFERS_SIZE, meta::MetaData};
+use super::meta::MetaData;
 
+/// # Deserializer
+/// 
+/// Deserializer struct. 
+/// 
+/// Call deserialize method for deserialize data file. 
+/// 
+/// # Examples
+/// 
 pub struct Deserializer {
     serialized_file_path: PathBuf,
     restore_path: PathBuf,
 }
 
 impl Deserializer {
+
+    /// Set serialized data file path and restored file path. 
     pub fn new<T: AsRef<Path>>(serialized_file: T, restore_path: T) -> Self {
         Deserializer {
             serialized_file_path: serialized_file.as_ref().to_path_buf(),
@@ -22,6 +32,28 @@ impl Deserializer {
         }
     }
 
+    /// Deserialize data file to directory. 
+    /// 
+    /// Checking [MD5](md5) checksum of files and if it is different, occur error. 
+    /// 
+    /// # Errors
+    /// MD5 checksum of deserialized file is different from original checksum. 
+    /// 
+    /// # Examples
+    /// ```
+    /// use lusl::{Serializer, Deserializer};
+    /// use std::path::PathBuf;
+    /// let original = PathBuf::from("tests");
+    /// let result = PathBuf::from("serialized2.bin");
+    /// let mut serializer = Serializer::new(original, result.clone()).unwrap();
+    /// serializer.serialize().unwrap();
+    /// let serialized_file = PathBuf::from("serialized2.bin");
+    /// let restored = PathBuf::from("deserialized_dir");
+    /// let deserializer = Deserializer::new(serialized_file, restored.clone());
+    /// deserializer.deserialize().unwrap();
+    /// assert!(&result.is_file());
+    /// assert!(&restored.is_dir());
+    /// ```
     pub fn deserialize(&self) -> io::Result<()> {
         let file = File::open(&self.serialized_file_path)?;
         let mut reader = BufReader::new(file);
@@ -64,7 +96,7 @@ impl Deserializer {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
             }
-            metadata.deserialize_size(flag_and_byte_count, &buffer.drain(..size_count).collect::<Vec<u8>>());
+            metadata.deserialize_size(&buffer.drain(..size_count).collect::<Vec<u8>>());
 
             // Restore checksum
             while buffer.len() < 32 {
@@ -115,7 +147,12 @@ impl Deserializer {
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Wrong checksum!!!! {}, current: {}, metadata: {}", file_path.to_str().unwrap(), new_checksum, a),
+                    format!(
+                        "Wrong checksum!!!! {}, current: {}, metadata: {}",
+                        file_path.to_str().unwrap(),
+                        new_checksum,
+                        a
+                    ),
                 ));
             }
 

@@ -6,7 +6,6 @@ use std::{
 pub mod deserializer;
 mod meta;
 pub mod serializer;
-const BUFFERS_SIZE: usize = 8192;
 
 /// Find all files in the root directory in a recursive way.
 /// The hidden files started with `.` will be not inclused in result.
