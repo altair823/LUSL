@@ -40,7 +40,7 @@ impl Serializer {
             metadata.strip_prifix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
-            let mut buffer_reader = BufReader::with_capacity(BUFFERS_SIZE, original_file);
+            let mut buffer_reader = BufReader::new(original_file);
             loop {
                 let length = {
                     let buffer = buffer_reader.fill_buf()?;

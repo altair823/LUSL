@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 
-const HASH_CHUNK_SIZE: usize = 1024;
+const HASH_CHUNK_SIZE: usize = 128;
 
 pub fn get_checksum(file: File) -> String {
     let mut hasher = Md5::new();
-    let mut buf_reader = BufReader::with_capacity(HASH_CHUNK_SIZE, file);
+    let mut buf_reader = BufReader::new(file);
     loop {
         let length = {
             let buf = buf_reader.fill_buf().unwrap();
@@ -24,9 +24,6 @@ pub fn get_checksum(file: File) -> String {
     format!("{:x}", a)
 }
 
-pub fn dir_integrity_check(root: PathBuf, integrity_file: PathBuf) {
-    
-}
 
 
 #[derive(Debug)]
@@ -282,11 +279,11 @@ impl PartialEq for MetaData {
 #[cfg(test)]
 mod tests {
 
-    use std::path::PathBuf;
+    use std::{path::PathBuf, fs::File};
 
     use crate::serialize::get_file_list;
 
-    use super::MetaData;
+    use super::{MetaData, get_checksum};
 
     const ORIGINAL_FILE: &str = "tests/original_images/dir1/board-g43968feec_1920.jpg";
 

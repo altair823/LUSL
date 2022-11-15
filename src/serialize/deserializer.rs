@@ -24,8 +24,8 @@ impl Deserializer {
 
     pub fn deserialize(&self) -> io::Result<()> {
         let file = File::open(&self.serialized_file_path)?;
-        let mut reader = BufReader::with_capacity(BUFFERS_SIZE, file);
-        let mut buffer = VecDeque::with_capacity(BUFFERS_SIZE);
+        let mut reader = BufReader::new(file);
+        let mut buffer = VecDeque::with_capacity(reader.capacity());
         loop {
             let mut metadata = MetaData::new();
             // Restore file path
@@ -81,19 +81,21 @@ impl Deserializer {
                 .append(true)
                 .write(true)
                 .open(&file_path)?;
-            let mut counter = buffer.len();
-            file.write(&Vec::from(buffer.clone()))?;
-            buffer.clear();
+            let mut counter = 0;
             let size = metadata.size as usize;
             loop {
                 buffer.append(&mut VecDeque::from_iter(reader.fill_buf()?.to_vec()));
                 reader.consume(buffer.len());
                 counter += buffer.len();
                 if counter > size {
-                    println!("filename: {} -- counter: {} -- size: {}", file_path.to_str().unwrap(), counter, size);
-                    file.write(&Vec::from(buffer.clone())[..BUFFERS_SIZE - (counter - size)])
-                        .unwrap();
-                    buffer.drain(..BUFFERS_SIZE - (counter - size));
+                    if size > buffer.len() {
+                        file.write(&Vec::from(buffer.clone())[..buffer.len() - (counter - size)])
+                            .unwrap();
+                        buffer.drain(..buffer.len() - (counter - size));
+                    } else {
+                        file.write(&Vec::from(buffer.clone())[..size]).unwrap();
+                        buffer.drain(..size);
+                    }
                     break;
                 }
 
@@ -107,12 +109,13 @@ impl Deserializer {
             // Verify checksum
             let file = File::open(&file_path)?;
             let new_checksum = get_checksum(file);
-            if new_checksum == metadata.checksum.unwrap() {
+            let a = metadata.checksum.unwrap();
+            if new_checksum == a {
                 println!("{} deserialize complete!", file_path.to_str().unwrap());
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Wrong checksum!!!! {}", file_path.to_str().unwrap()),
+                    format!("Wrong checksum!!!! {}, current: {}, metadata: {}", file_path.to_str().unwrap(), new_checksum, a),
                 ));
             }
 
@@ -156,19 +159,5 @@ mod tests {
         if restored.is_dir() {
             fs::remove_dir_all(restored).unwrap();
         }
-    }
-
-    #[test]
-    fn d() {
-        let original = PathBuf::from("/home/pi/testcase");
-        let result = PathBuf::from("/home/pi/deserialize_test.bin");
-        // let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        // serializer.serialize().unwrap();
-
-        let serialized_file = PathBuf::from("/home/pi/deserialize_test.bin");
-        let restored = PathBuf::from("/home/pi/deserialize_test_dir");
-        let deserializer = Deserializer::new(serialized_file, restored.clone());
-        deserializer.deserialize().unwrap();
-        // assert!(&result.is_file());
     }
 }
