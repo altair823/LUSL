@@ -1,5 +1,6 @@
 [package]
 name = "lusl"
+description = "Lossless Uncompressed Serializer Library"
 version = "1.0.0"
 edition = "2021"
 authors = ["Kim tae hyeon <kimth0734@gmail.com>"]
