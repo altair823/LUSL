@@ -88,9 +88,10 @@ impl MetaData {
                 break;
             }
         }
-        flag_and_size += (self.size.to_le_bytes().len() - index) as u8;
+        let size_bytes_count = (self.size.to_le_bytes().len() - index) as u8;
+        flag_and_size += size_bytes_count;
         binary.push(flag_and_size);
-        for i in &self.size.to_le_bytes()[..self.size.to_le_bytes().len() - index] {
+        for i in &self.size.to_le_bytes()[..size_bytes_count as usize] {
             binary.push(*i);
         }
 
@@ -144,13 +145,7 @@ impl MetaData {
     }
 
     pub fn deserialize_size(&mut self, size_binary: &[u8]) {
-        let mut size: u64 = 0;
-        let mut coef = 1;
-        for i in size_binary {
-            size += *i as u64 * coef;
-            coef *= 0x100;
-        }
-        self.size = size;
+        self.size = super::binary_to_u64(size_binary);
     }
 
     pub fn deserialize_checksum(&mut self, checksum_binary: &[u8]) {

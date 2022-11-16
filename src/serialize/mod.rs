@@ -7,6 +7,8 @@ pub mod deserializer;
 mod meta;
 pub mod serializer;
 
+const VERIFY_STRING: &str = "LUSL Serialized File";
+
 /// Find all files in the root directory in a recursive way.
 /// The hidden files started with `.` will be not included in result.
 fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
@@ -40,4 +42,14 @@ fn get_file_list<O: AsRef<Path>>(root: O) -> io::Result<Vec<PathBuf>> {
     }
 
     Ok(image_list)
+}
+
+fn binary_to_u64(binary: &[u8]) -> u64 {
+    let mut num: u64 = 0;
+    let mut coef = 1;
+    for i in binary {
+        num += *i as u64 * coef;
+        coef *= 0x100;
+    }
+    num
 }
