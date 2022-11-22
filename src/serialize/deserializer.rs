@@ -138,9 +138,9 @@ impl Deserializer {
             )?);
 
             // Write file
-            let file_path = self.restore_path.join(&metadata.path);
-            fs::create_dir_all(self.restore_path.join(&metadata.path).parent().unwrap()).unwrap();
-            File::create(self.restore_path.join(&metadata.path))?;
+            let file_path = self.restore_path.join(&metadata.path());
+            fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
+            File::create(self.restore_path.join(&metadata.path()))?;
             let mut file = BufWriter::new(
                 OpenOptions::new()
                     .append(true)
@@ -148,7 +148,7 @@ impl Deserializer {
                     .open(&file_path)?,
             );
             let mut counter = 0;
-            let size = metadata.size as usize;
+            let size = metadata.size() as usize;
             loop {
                 counter += Deserializer::fill_buf(&mut buffer, &mut reader)?;
                 if counter > size {
@@ -174,17 +174,17 @@ impl Deserializer {
             // Verify checksum
             let file = File::open(&file_path)?;
             let new_checksum = get_checksum(file);
-            let a = metadata.checksum.unwrap();
-            if new_checksum == a {
+            let old_checksum = metadata.checksum().as_ref().unwrap();
+            if new_checksum == *old_checksum {
                 println!("{} deserialize complete!", file_path.to_str().unwrap());
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Wrong checksum!!!! {}, current: {}, metadata: {}",
+                        "Wrong checksum!!!! {}, new checksum: {}, old checksum: {}",
                         file_path.to_str().unwrap(),
                         new_checksum,
-                        a
+                        old_checksum
                     ),
                 ));
             }

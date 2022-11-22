@@ -1,4 +1,8 @@
-use super::{get_file_list, meta::MetaData, VERIFY_STRING};
+use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{OsRng, stream::{self, Encryptor}, rand_core::RngCore}, AeadInPlace};
+
+use crate::encryption::{make_key_from_password, make_nonce};
+
+use super::{get_file_list, meta::MetaData, VERIFY_STRING, BUFFER_LENGTH};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
@@ -29,6 +33,7 @@ pub struct Serializer {
     parent: PathBuf,
     original_file_list: Vec<PathBuf>,
     result: BufWriter<File>,
+    to_encrypt: bool,
 }
 
 impl Serializer {
@@ -57,6 +62,7 @@ impl Serializer {
                     .write(true)
                     .open(result_path)?,
             ),
+            to_encrypt: false,
         })
     }
 
@@ -68,27 +74,35 @@ impl Serializer {
             ))
             .unwrap();
         for file in &self.original_file_list {
-            let original_file = File::open(file)?;
-
             // Write metadata.
             let mut metadata = MetaData::from(file);
             metadata.strip_prefix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
             // Write binary data.
-            let mut buffer_reader = BufReader::new(original_file);
-            loop {
-                let length = {
-                    let buffer = buffer_reader.fill_buf()?;
+            write_raw_data(file, &mut self.result)?;
+            println!("{:?} serializing complete!", &file);
+        }
+        self.result.flush()?;
+        Ok(())
+    }
 
-                    self.result.write(buffer)?;
-                    buffer.len()
-                };
-                if length == 0 {
-                    break;
-                }
-                buffer_reader.consume(length);
-            }
+
+    pub fn serialize_with_encrypt(&mut self, password: &str) -> io::Result<()> {
+        self.result
+            .write(&Serializer::make_verify_marker(
+                self.original_file_list.len(),
+            ))
+            .unwrap();
+        for file in &self.original_file_list {
+            // Write metadata.
+            let mut metadata = MetaData::from(file);
+            metadata.set_file_encrypted(self.to_encrypt);
+            metadata.strip_prefix(&self.parent);
+            self.result.write(&metadata.serialize())?;
+
+            // Write binary data.
+            write_encrypt_data(file, &mut self.result, &password)?;
             println!("{:?} serializing complete!", &file);
         }
         self.result.flush()?;
@@ -118,6 +132,55 @@ impl Serializer {
     }
 }
 
+fn write_raw_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>) -> io::Result<()> {
+    let original_file = File::open(original_file)?;
+    let mut buffer_reader = BufReader::new(original_file);
+    loop {
+        let length = {
+            let buffer = buffer_reader.fill_buf()?;
+
+            destination.write(buffer)?;
+            buffer.len()
+        };
+        if length == 0 {
+            break;
+        }
+        buffer_reader.consume(length);
+    }
+    destination.flush()?;
+    Ok(())
+}
+
+fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>, password: &str) -> io::Result<()> {
+    let original_file = File::open(original_file)?;
+    let mut buffer_reader = BufReader::with_capacity(BUFFER_LENGTH, original_file);
+    let nonce = make_nonce();
+    let (key, salt) = make_key_from_password(password); // this part takes lots of time!
+    let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
+    let mut encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
+
+    destination.write(&salt)?;
+    destination.write(&nonce)?;
+
+    loop {
+        let length = {
+            let buffer = buffer_reader.fill_buf()?;
+            let encrypted_data = match encryptor.encrypt_next(buffer){
+                Ok(c) => c,
+                Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!"))
+            };
+            destination.write(&encrypted_data)?;
+            buffer.len()
+        };
+        if length == 0 {
+            break;
+        }
+        buffer_reader.consume(length);
+    }
+    destination.flush()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -134,5 +197,13 @@ mod tests {
         if result.is_file() {
             fs::remove_file(result).unwrap();
         }
+    }
+
+    #[test]
+    fn serialize_with_encrypt_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("serialize_with_encrypt_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.serialize_with_encrypt("test_password").unwrap();
     }
 }

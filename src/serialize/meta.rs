@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use chacha20poly1305::aead::OsRng;
+use chacha20poly1305::{AeadCore, XChaCha20Poly1305};
 use md5::{Digest, Md5};
 
 pub fn get_checksum(file: File) -> String {
@@ -24,12 +26,13 @@ pub fn get_checksum(file: File) -> String {
 
 #[derive(Debug)]
 pub struct MetaData {
-    pub path: PathBuf,
-    pub size: u64,
-    pub is_file: bool,
-    pub is_dir: bool,
-    pub is_symlink: bool,
-    pub checksum: Option<String>,
+    path: PathBuf,
+    size: u64,
+    is_file: bool,
+    is_dir: bool,
+    is_symlink: bool,
+    checksum: Option<String>,
+    is_encrypted: bool,
 }
 
 impl MetaData {
@@ -41,7 +44,20 @@ impl MetaData {
             is_dir: false,
             is_symlink: false,
             checksum: None,
+            is_encrypted: false,
         }
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn checksum(&self) -> &Option<String> {
+        &self.checksum
     }
 
     pub fn strip_prefix<T: AsRef<Path>>(&mut self, root: T) {
@@ -79,6 +95,9 @@ impl MetaData {
         if let true = self.is_symlink {
             flag_and_size += 0x20;
         }
+        if let true = self.is_encrypted {
+            flag_and_size += 0x10;
+        }
 
         let mut index = 0;
         for byte in self.size.to_be_bytes() {
@@ -113,6 +132,10 @@ impl MetaData {
             }
         }
         binary
+    }
+
+    pub fn set_file_encrypted(&mut self, is_file_encrypted: bool) {
+        self.is_encrypted = is_file_encrypted;
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -179,6 +202,7 @@ impl<T: AsRef<Path>> From<&T> for MetaData {
                         Err(_) => false,
                     },
                     checksum: { Some(get_checksum(file)) },
+                    is_encrypted: false,
                 }
             }
             Err(_) => return MetaData::new(),
@@ -228,6 +252,7 @@ mod tests {
                 is_dir: m.is_dir,
                 is_symlink: m.is_symlink,
                 checksum: Some(m.checksum.clone().unwrap()),
+                is_encrypted: false,
             })
             .collect();
         let mut result_metadata_vec = Vec::from([
@@ -238,6 +263,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("4e42993bfd2756df48b646d68433db1e")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("capsules-g869437822_1920.jpg"),
@@ -246,6 +272,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("60e191a914756ff7ae259e33f40f20da")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("board-g43968feec_1920.jpg"),
@@ -254,6 +281,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("37ca14866812327e1776d8cbb250501c")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("laboratory-g8f9267f5f_1920.jpg"),
@@ -262,6 +290,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("0bc9b40f01fd8d4c0deb5a76f430a778")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("폭발.jpg"),
@@ -270,6 +299,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("4753aff9b06a34832ad1de0a69d5dcd3")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("digitization-1755812_1920.jpg"),
@@ -278,6 +308,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("4b6cab47e9193a4aebe4c8c6b7c88c1b")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("syringe-ge5e95bfe6_1920.jpg"),
@@ -286,6 +317,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("a7385d8a719c3036a857e21225c5bd6b")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("books-g6617d4d97_1920.jpg"),
@@ -294,6 +326,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("65aee1442129f56a0a6157c6b55f80c9")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("test-pattern-152459.png"),
@@ -302,6 +335,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("a09d4eab0326ba5403369035531f9308")),
+                is_encrypted: false,
             },
             MetaData {
                 path: PathBuf::from("tv-g87676cdfb_1280.png"),
@@ -310,6 +344,7 @@ mod tests {
                 is_dir: false,
                 is_symlink: false,
                 checksum: Some(String::from("91517821bc6851b0d9abec5d5adea961")),
+                is_encrypted: false,
             },
         ]);
         original_metadata_vec.sort_by_key(|m| m.path.clone());
