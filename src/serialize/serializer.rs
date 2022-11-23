@@ -1,4 +1,4 @@
-use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{OsRng, stream::{self, Encryptor}, rand_core::RngCore}, AeadInPlace};
+use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::stream};
 
 use crate::encryption::{make_new_key_from_password, make_nonce};
 

@@ -2,8 +2,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use chacha20poly1305::aead::OsRng;
-use chacha20poly1305::{AeadCore, XChaCha20Poly1305};
 use md5::{Digest, Md5};
 
 pub fn get_checksum(file: File) -> String {

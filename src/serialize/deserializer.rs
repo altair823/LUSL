@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, BufWriter, Write, Read},
+    io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -61,7 +61,11 @@ impl Deserializer {
     ) -> io::Result<Vec<u8>> {
         let buffer = buffer;
         while buffer.len() < length {
+            let previous_buf_len = buffer.len();
             Deserializer::fill_buf(buffer, reader)?;
+            if buffer.len() == previous_buf_len {
+                return Ok(buffer.drain(..buffer.len()).collect());
+            }
         }
         Ok(buffer.drain(..length).collect())
     }
@@ -286,7 +290,7 @@ impl Deserializer {
             // Restore nonce and make decryptor.
             let nonce = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, NONCE_LENGTH)?;
             let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
-            let mut decrypter = stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
+            let mut decryptor = stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
 
             // Write file
             let file_path = self.restore_path.join(&metadata.path());
@@ -306,7 +310,7 @@ impl Deserializer {
                 counter += temp.len();
                 if counter > size {
                     if size > temp.len() {
-                        let decrypted_data = decrypter.decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)]).unwrap();
+                        let decrypted_data = decryptor.decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)]).unwrap();
                         file.write(&decrypted_data.clone())?;
 
                         let a = &mut temp[..BUFFER_LENGTH + 16 - (counter - size)];
@@ -315,21 +319,23 @@ impl Deserializer {
                             buffer.push_front(temp[i]);
                         }
                     } else {
-                        let decrypted_data = decrypter.decrypt_last(temp.as_slice()).unwrap();
+                        let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
                         file.write(&decrypted_data)?;
                     }
                     file.flush()?;
                     break;
                 }
 
-                let decrypted_data = decrypter.decrypt_next(temp.as_slice()).unwrap();
-                file.write(&decrypted_data)?;
-                temp.clear();
-                // buffer.clear();
+                
                 if counter == size {
+                    let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
+                    file.write(&decrypted_data)?;
                     file.flush()?;
                     break;
                 }
+                let decrypted_data = decryptor.decrypt_next(temp.as_slice()).unwrap();
+                file.write(&decrypted_data)?;
+                temp.clear();
             }
 
             // Verify checksum
@@ -416,7 +422,7 @@ mod tests {
             fs::remove_file(result).unwrap();
         }
         if restored.is_dir() {
-            //fs::remove_dir_all(restored).unwrap();
+            fs::remove_dir_all(restored).unwrap();
         }
     }
 }
