@@ -1,11 +1,11 @@
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{OsRng, stream::{self, Encryptor}, rand_core::RngCore}, AeadInPlace};
 
-use crate::encryption::{make_key_from_password, make_nonce};
+use crate::encryption::{make_new_key_from_password, make_nonce};
 
 use super::{get_file_list, meta::MetaData, VERIFY_STRING, BUFFER_LENGTH};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, BufWriter, Write},
+    io::{self, BufRead, BufReader, BufWriter, Write, Read},
     path::{Path, PathBuf},
 };
 
@@ -33,7 +33,6 @@ pub struct Serializer {
     parent: PathBuf,
     original_file_list: Vec<PathBuf>,
     result: BufWriter<File>,
-    to_encrypt: bool,
 }
 
 impl Serializer {
@@ -62,17 +61,13 @@ impl Serializer {
                     .write(true)
                     .open(result_path)?,
             ),
-            to_encrypt: false,
         })
     }
 
     /// Serialize root directory and copy it to result file.
     pub fn serialize(&mut self) -> io::Result<()> {
-        self.result
-            .write(&Serializer::make_verify_marker(
-                self.original_file_list.len(),
-            ))
-            .unwrap();
+        self.result.write(&Serializer::get_file_marker())?;
+        self.result.write(&self.get_total_file_count())?;
         for file in &self.original_file_list {
             // Write metadata.
             let mut metadata = MetaData::from(file);
@@ -89,34 +84,37 @@ impl Serializer {
 
 
     pub fn serialize_with_encrypt(&mut self, password: &str) -> io::Result<()> {
-        self.result
-            .write(&Serializer::make_verify_marker(
-                self.original_file_list.len(),
-            ))
-            .unwrap();
-        let (key, salt) = make_key_from_password(password);
+        self.result.write(&Serializer::get_file_marker())?;
+        self.result.write(&self.get_total_file_count())?;
+        let (key, salt) = make_new_key_from_password(password);
         // Write salt.
         self.result.write(&salt)?;
         for file in &self.original_file_list {
             // Write metadata.
             let mut metadata = MetaData::from(file);
-            metadata.set_file_encrypted(self.to_encrypt);
+            metadata.set_file_encrypted(true);
             metadata.strip_prefix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
             // Write binary data.
-            write_encrypt_data(file, &mut self.result, &key, salt)?;
+            write_encrypt_data(file, &mut self.result, &key)?;
             println!("{:?} serializing complete!", &file);
         }
         self.result.flush()?;
         Ok(())
     }
 
-    fn make_verify_marker(file_count: usize) -> Vec<u8> {
+    fn get_file_marker() -> Vec<u8> {
         let mut marker: Vec<u8> = Vec::new();
         for i in VERIFY_STRING.as_bytes() {
             marker.push(*i);
         }
+        marker
+    }
+
+    fn get_total_file_count(&self) -> Vec<u8> {
+        let file_count = self.original_file_list.len();
+        let mut count_binary: Vec<u8> = Vec::new();
         let mut index = 0;
         for byte in file_count.to_be_bytes() {
             if byte == 0 {
@@ -126,12 +124,12 @@ impl Serializer {
             }
         }
         let file_count_bytes = file_count.to_le_bytes().len() - index;
-        marker.push(file_count_bytes as u8);
+        count_binary.push(file_count_bytes as u8);
         for i in &file_count.to_le_bytes()[..file_count_bytes as usize] {
-            marker.push(*i);
+            count_binary.push(*i);
         }
 
-        marker
+        count_binary
     }
 }
 
@@ -154,7 +152,7 @@ fn write_raw_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<
     Ok(())
 }
 
-fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>, key: &Vec<u8>, salt: [u8; 32]) -> io::Result<()> {
+fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>, key: &Vec<u8>) -> io::Result<()> {
     let original_file = File::open(original_file)?;
     let mut buffer_reader = BufReader::with_capacity(BUFFER_LENGTH, original_file);
     let nonce = make_nonce();
@@ -164,21 +162,49 @@ fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWri
     // Every time the encryption begins, create another random nonce. 
     destination.write(&nonce)?;
 
+    let mut buffer = [0u8; BUFFER_LENGTH];
     loop {
-        let length = {
-            let buffer = buffer_reader.fill_buf()?;
-            let encrypted_data = match encryptor.encrypt_next(buffer){
+        let length = buffer_reader.read(&mut buffer)?;
+        if length == BUFFER_LENGTH {
+            let encrypted_data = match encryptor.encrypt_next(buffer.as_slice()){
                 Ok(c) => c,
                 Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!"))
             }; // The bottle neck!
             destination.write(&encrypted_data)?;
-            buffer.len()
-        };
-        if length == 0 {
+        } else {
+            let encrypted_data = match encryptor.encrypt_last(&buffer[..length]) {
+                Ok(c) => c,
+                Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!")),
+            };
+            destination.write(&encrypted_data)?;
             break;
         }
-        buffer_reader.consume(length);
     }
+
+    // loop {
+    //     let length = {
+    //         let buffer = buffer_reader.fill_buf()?;
+    //         buffer_reader.consume(buffer.len());
+    //         if buffer.len() == BUFFER_LENGTH {
+    //             let encrypted_data = match encryptor.encrypt_next(buffer){
+    //                 Ok(c) => c,
+    //                 Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!"))
+    //             }; // The bottle neck!
+    //             destination.write(&encrypted_data)?;
+    //             buffer.len()
+    //         } else {
+    //             let encrypted_data = match encryptor.encrypt_last(buffer) {
+    //                 Ok(c) => c,
+    //                 Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!")),
+    //             };
+    //             destination.write(&encrypted_data)?;
+    //             buffer.len()
+    //         }
+    //     };
+    //     if length == 0 {
+    //         break;
+    //     }
+    // }
     destination.flush()?;
     Ok(())
 }

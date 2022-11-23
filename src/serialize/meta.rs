@@ -64,7 +64,7 @@ impl MetaData {
         self.path = self.path.strip_prefix(root).unwrap().to_path_buf()
     }
 
-    fn name_ex_to_binary(&self) -> Vec<u8> {
+    fn serialize_path(&self) -> Vec<u8> {
         let mut binary: Vec<u8> = Vec::new();
         let mut name = self.path.to_str().unwrap().to_string();
         while name.len() > u16::MAX.into() {
@@ -82,7 +82,7 @@ impl MetaData {
         binary
     }
 
-    fn type_size_to_binary(&self) -> Vec<u8> {
+    fn serialize_type_size(&self) -> Vec<u8> {
         let mut binary: Vec<u8> = Vec::new();
 
         let mut flag_and_size: u8 = 0;
@@ -117,7 +117,7 @@ impl MetaData {
         binary
     }
 
-    fn checksum_to_binary(&self) -> Vec<u8> {
+    fn serialize_checksum(&self) -> Vec<u8> {
         let mut binary: Vec<u8> = Vec::new();
         match &self.checksum {
             Some(c) => {
@@ -140,9 +140,9 @@ impl MetaData {
 
     pub fn serialize(&self) -> Vec<u8> {
         let mut binary: Vec<u8> = Vec::new();
-        binary.append(&mut self.name_ex_to_binary());
-        binary.append(&mut self.type_size_to_binary());
-        binary.append(&mut self.checksum_to_binary());
+        binary.append(&mut self.serialize_path());
+        binary.append(&mut self.serialize_type_size());
+        binary.append(&mut self.serialize_checksum());
         binary
     }
 
@@ -165,6 +165,10 @@ impl MetaData {
             0 => false,
             _ => true,
         };
+        self.is_encrypted = match type_flag & 0x10 {
+            0 => false,
+            _ => true,
+        }
     }
 
     pub fn deserialize_size(&mut self, size_binary: &[u8]) {

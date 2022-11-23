@@ -1,13 +1,15 @@
 use std::{
     collections::VecDeque,
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, BufWriter, Write},
+    io::{self, BufRead, BufReader, BufWriter, Write, Read},
     path::{Path, PathBuf},
 };
 
-use crate::serialize::meta::get_checksum;
+use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{stream, generic_array::GenericArray}};
 
-use super::{binary_to_u64, meta::MetaData, VERIFY_STRING};
+use crate::{serialize::meta::get_checksum, encryption::{SALT_LENGTH, NONCE_LENGTH, make_key_from_password_and_salt}};
+
+use super::{binary_to_u64, meta::MetaData, VERIFY_STRING, BUFFER_LENGTH};
 
 /// # Deserializer
 ///
@@ -208,6 +210,167 @@ impl Deserializer {
         }
         Ok(())
     }
+
+    pub fn deserialize_with_decrypt(&self, password: &str) -> io::Result<()> {
+        let file = File::open(&self.serialized_file_path)?;
+        let mut reader = BufReader::with_capacity(BUFFER_LENGTH + 16, file);
+        let mut buffer = VecDeque::with_capacity(reader.capacity());
+
+        // Verify marker.
+        let marker =
+            Deserializer::fill_buf_with_len(&mut buffer, &mut reader, VERIFY_STRING.len())?;
+        match String::from_utf8(marker) {
+            Ok(m) => match m == String::from(VERIFY_STRING) {
+                true => (),
+                false => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Wrong Data File!",
+                    ))
+                }
+            },
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Wrong Data File!",
+                ))
+            }
+        };
+
+        // Read the number of all files.
+        let original_file_count_bytes =
+            Deserializer::fill_buf_with_len(&mut buffer, &mut reader, 1)?[0];
+        let original_file_count = binary_to_u64(&Deserializer::fill_buf_with_len(
+            &mut buffer,
+            &mut reader,
+            original_file_count_bytes as usize,
+        )?);
+        let mut current_file_count: u64 = 0;
+
+        // Read salt and key.
+        let salt = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, SALT_LENGTH)?;
+        let key = make_key_from_password_and_salt(password, salt);
+
+        loop {
+            let mut metadata = MetaData::new();
+
+            // Restore file path
+            let path_size_bin = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, 2)?;
+            let path_size = path_size_bin[0] as usize * 0x100 + path_size_bin[1] as usize;
+            metadata.deserialize_path(&Deserializer::fill_buf_with_len(
+                &mut buffer,
+                &mut reader,
+                path_size,
+            )?);
+
+            // Restore file type
+            let flag_and_byte_count =
+                Deserializer::fill_buf_with_len(&mut buffer, &mut reader, 1)?[0];
+            metadata.deserialize_type(flag_and_byte_count);
+
+            // Restore file size
+            let size_count = (flag_and_byte_count & 0xF) as usize;
+            metadata.deserialize_size(&Deserializer::fill_buf_with_len(
+                &mut buffer,
+                &mut reader,
+                size_count,
+            )?);
+
+            // Restore checksum
+            metadata.deserialize_checksum(&Deserializer::fill_buf_with_len(
+                &mut buffer,
+                &mut reader,
+                32,
+            )?);
+
+            // Restore nonce and make decryptor.
+            let nonce = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, NONCE_LENGTH)?;
+            let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
+            let mut decrypter = stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
+
+            // Write file
+            let file_path = self.restore_path.join(&metadata.path());
+            fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
+            File::create(self.restore_path.join(&metadata.path()))?;
+            let mut file = BufWriter::with_capacity(BUFFER_LENGTH + 16, 
+                OpenOptions::new()
+                    .append(true)
+                    .write(true)
+                    .open(&file_path)?,
+            );
+            let mut counter = 0;
+            let mut size = metadata.size() as usize;
+            loop {
+                let mut temp = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, BUFFER_LENGTH + 16)?;
+                size += 16;
+                counter += temp.len();
+                if counter > size {
+                    if size > temp.len() {
+                        let decrypted_data = decrypter.decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)]).unwrap();
+                        file.write(&decrypted_data.clone())?;
+
+                        let a = &mut temp[..BUFFER_LENGTH + 16 - (counter - size)];
+                        a.reverse();
+                        for i in (BUFFER_LENGTH + 16 - (counter - size)..temp.len()).rev(){
+                            buffer.push_front(temp[i]);
+                        }
+                    } else {
+                        let decrypted_data = decrypter.decrypt_last(temp.as_slice()).unwrap();
+                        file.write(&decrypted_data)?;
+                    }
+                    file.flush()?;
+                    break;
+                }
+
+                let decrypted_data = decrypter.decrypt_next(temp.as_slice()).unwrap();
+                file.write(&decrypted_data)?;
+                temp.clear();
+                // buffer.clear();
+                if counter == size {
+                    file.flush()?;
+                    break;
+                }
+            }
+
+            // Verify checksum
+            let file = File::open(&file_path)?;
+            let new_checksum = get_checksum(file);
+            let old_checksum = metadata.checksum().as_ref().unwrap();
+            if new_checksum == *old_checksum {
+                println!("{} deserialize complete!", file_path.to_str().unwrap());
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Wrong checksum!!!! {}, new checksum: {}, old checksum: {}",
+                        file_path.to_str().unwrap(),
+                        new_checksum,
+                        old_checksum
+                    ),
+                ));
+            }
+
+            // Count file.
+            current_file_count += 1;
+
+            if buffer.len() == 0 {
+                if Deserializer::fill_buf(&mut buffer, &mut reader)? == 0 {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+        }
+        if original_file_count != current_file_count {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Number of files is different with the original directory!",
+            ));
+        }
+
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -234,6 +397,26 @@ mod tests {
         }
         if restored.is_dir() {
             fs::remove_dir_all(restored).unwrap();
+        }
+    }
+
+    #[test]
+    fn deserialize_with_decrypt_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("deserialize_with_decrypt_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.serialize_with_encrypt("test_password").unwrap();
+
+        let serialized_file = PathBuf::from("deserialize_with_decrypt_test.bin");
+        let restored = PathBuf::from("deserialize_with_decrypt_test_dir");
+        let deserializer = Deserializer::new(serialized_file, restored.clone());
+         deserializer.deserialize_with_decrypt("test_password").unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+        if restored.is_dir() {
+            //fs::remove_dir_all(restored).unwrap();
         }
     }
 }
