@@ -94,6 +94,9 @@ impl Serializer {
                 self.original_file_list.len(),
             ))
             .unwrap();
+        let (key, salt) = make_key_from_password(password);
+        // Write salt.
+        self.result.write(&salt)?;
         for file in &self.original_file_list {
             // Write metadata.
             let mut metadata = MetaData::from(file);
@@ -102,7 +105,7 @@ impl Serializer {
             self.result.write(&metadata.serialize())?;
 
             // Write binary data.
-            write_encrypt_data(file, &mut self.result, &password)?;
+            write_encrypt_data(file, &mut self.result, &key, salt)?;
             println!("{:?} serializing complete!", &file);
         }
         self.result.flush()?;
@@ -151,15 +154,14 @@ fn write_raw_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<
     Ok(())
 }
 
-fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>, password: &str) -> io::Result<()> {
+fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>, key: &Vec<u8>, salt: [u8; 32]) -> io::Result<()> {
     let original_file = File::open(original_file)?;
     let mut buffer_reader = BufReader::with_capacity(BUFFER_LENGTH, original_file);
     let nonce = make_nonce();
-    let (key, salt) = make_key_from_password(password); // this part takes lots of time!
     let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
     let mut encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
 
-    destination.write(&salt)?;
+    // Every time the encryption begins, create another random nonce. 
     destination.write(&nonce)?;
 
     loop {
@@ -168,7 +170,7 @@ fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWri
             let encrypted_data = match encryptor.encrypt_next(buffer){
                 Ok(c) => c,
                 Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!"))
-            };
+            }; // The bottle neck!
             destination.write(&encrypted_data)?;
             buffer.len()
         };
@@ -205,5 +207,9 @@ mod tests {
         let result = PathBuf::from("serialize_with_encrypt_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
         serializer.serialize_with_encrypt("test_password").unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
     }
 }
