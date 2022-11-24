@@ -425,4 +425,17 @@ mod tests {
             fs::remove_dir_all(restored).unwrap();
         }
     }
+
+    #[test]
+    fn t() {
+        let original = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/실록_compressed");
+        let result = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.serialize_with_encrypt("823eric!@").unwrap();
+
+        let serialized_file = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
+        let restored = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test_dir");
+        let deserializer = Deserializer::new(serialized_file, restored.clone());
+         deserializer.deserialize_with_decrypt("823eric!@").unwrap();
+    }
 }
