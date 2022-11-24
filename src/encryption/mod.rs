@@ -1,4 +1,4 @@
-use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
+use chacha20poly1305::aead::{rand_core::RngCore, OsRng};
 
 pub const NONCE_LENGTH: usize = 19;
 pub const SALT_LENGTH: usize = 32;

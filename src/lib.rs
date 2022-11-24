@@ -1,4 +1,3 @@
-
 //!
 //! # Lossless Uncompressed Serializer Library
 //!
@@ -6,8 +5,8 @@
 //!
 //! It also save [MD5](md5) checksum when serializing files and verify it when deserializing file for data integrity.
 
-mod serialize;
 mod encryption;
+mod serialize;
 
 pub use serialize::serializer::Serializer;
 

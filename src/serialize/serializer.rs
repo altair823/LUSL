@@ -1,11 +1,11 @@
-use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::stream};
+use chacha20poly1305::{aead::stream, KeyInit, XChaCha20Poly1305};
 
 use crate::encryption::{make_new_key_from_password, make_nonce};
 
-use super::{get_file_list, meta::MetaData, VERIFY_STRING, BUFFER_LENGTH};
+use super::{get_file_list, meta::MetaData, BUFFER_LENGTH, VERIFY_STRING};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, BufWriter, Write, Read},
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -82,7 +82,6 @@ impl Serializer {
         Ok(())
     }
 
-
     pub fn serialize_with_encrypt(&mut self, password: &str) -> io::Result<()> {
         self.result.write(&Serializer::get_file_marker())?;
         self.result.write(&self.get_total_file_count())?;
@@ -133,7 +132,10 @@ impl Serializer {
     }
 }
 
-fn write_raw_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>) -> io::Result<()> {
+fn write_raw_data<T: AsRef<Path>>(
+    original_file: T,
+    destination: &mut BufWriter<File>,
+) -> io::Result<()> {
     let original_file = File::open(original_file)?;
     let mut buffer_reader = BufReader::new(original_file);
     loop {
@@ -152,29 +154,43 @@ fn write_raw_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<
     Ok(())
 }
 
-fn write_encrypt_data<T: AsRef<Path>>(original_file: T, destination: &mut BufWriter<File>, key: &Vec<u8>) -> io::Result<()> {
+fn write_encrypt_data<T: AsRef<Path>>(
+    original_file: T,
+    destination: &mut BufWriter<File>,
+    key: &Vec<u8>,
+) -> io::Result<()> {
     let original_file = File::open(original_file)?;
     let mut buffer_reader = BufReader::with_capacity(BUFFER_LENGTH, original_file);
     let nonce = make_nonce();
     let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
     let mut encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
 
-    // Every time the encryption begins, create another random nonce. 
+    // Every time the encryption begins, create another random nonce.
     destination.write(&nonce)?;
 
     let mut buffer = [0u8; BUFFER_LENGTH];
     loop {
         let length = buffer_reader.read(&mut buffer)?;
         if length == BUFFER_LENGTH {
-            let encrypted_data = match encryptor.encrypt_next(buffer.as_slice()){
+            let encrypted_data = match encryptor.encrypt_next(buffer.as_slice()) {
                 Ok(c) => c,
-                Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!"))
+                Err(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Cannot encrypt data!",
+                    ))
+                }
             }; // The bottle neck!
             destination.write(&encrypted_data)?;
         } else {
             let encrypted_data = match encryptor.encrypt_last(&buffer[..length]) {
                 Ok(c) => c,
-                Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!")),
+                Err(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Cannot encrypt data!",
+                    ))
+                }
             };
             destination.write(&encrypted_data)?;
             break;

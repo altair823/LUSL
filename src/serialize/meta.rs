@@ -287,11 +287,11 @@ mod tests {
             },
             MetaData {
                 path: PathBuf::from("laboratory-g8f9267f5f_1920.jpg"),
-                size: 418648,
+                size: 6737,
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("0bc9b40f01fd8d4c0deb5a76f430a778")),
+                checksum: Some(String::from("0c37be929cdc29b5ac0914104cda75aa")),
                 is_encrypted: false,
             },
             MetaData {

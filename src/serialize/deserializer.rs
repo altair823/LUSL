@@ -5,11 +5,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{stream, generic_array::GenericArray}};
+use chacha20poly1305::{
+    aead::{generic_array::GenericArray, stream},
+    KeyInit, XChaCha20Poly1305,
+};
 
-use crate::{serialize::meta::get_checksum, encryption::{SALT_LENGTH, NONCE_LENGTH, make_key_from_password_and_salt}};
+use crate::{
+    encryption::{make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
+    serialize::meta::get_checksum,
+};
 
-use super::{binary_to_u64, meta::MetaData, VERIFY_STRING, BUFFER_LENGTH};
+use super::{binary_to_u64, meta::MetaData, BUFFER_LENGTH, VERIFY_STRING};
 
 /// # Deserializer
 ///
@@ -290,13 +296,15 @@ impl Deserializer {
             // Restore nonce and make decryptor.
             let nonce = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, NONCE_LENGTH)?;
             let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
-            let mut decryptor = stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
+            let mut decryptor =
+                stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
 
             // Write file
             let file_path = self.restore_path.join(&metadata.path());
             fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
             File::create(self.restore_path.join(&metadata.path()))?;
-            let mut file = BufWriter::with_capacity(BUFFER_LENGTH + 16, 
+            let mut file = BufWriter::with_capacity(
+                BUFFER_LENGTH + 16,
                 OpenOptions::new()
                     .append(true)
                     .write(true)
@@ -305,28 +313,35 @@ impl Deserializer {
             let mut counter = 0;
             let mut size = metadata.size() as usize;
             loop {
-                let mut temp = Deserializer::fill_buf_with_len(&mut buffer, &mut reader, BUFFER_LENGTH + 16)?;
+                let mut temp =
+                    Deserializer::fill_buf_with_len(&mut buffer, &mut reader, BUFFER_LENGTH + 16)?;
                 size += 16;
                 counter += temp.len();
                 if counter > size {
                     if size > temp.len() {
-                        let decrypted_data = decryptor.decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)]).unwrap();
+                        let decrypted_data = decryptor
+                            .decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)])
+                            .unwrap();
                         file.write(&decrypted_data.clone())?;
 
                         let a = &mut temp[..BUFFER_LENGTH + 16 - (counter - size)];
                         a.reverse();
-                        for i in (BUFFER_LENGTH + 16 - (counter - size)..temp.len()).rev(){
+                        for i in (BUFFER_LENGTH + 16 - (counter - size)..temp.len()).rev() {
                             buffer.push_front(temp[i]);
                         }
                     } else {
-                        let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
+                        let decrypted_data = decryptor.decrypt_last(&temp[..size]).unwrap();
                         file.write(&decrypted_data)?;
+                        let a = &mut temp[size..];
+                        a.reverse();
+                        for i in size..temp.len() {
+                            buffer.push_front(temp[i]);
+                        }
                     }
                     file.flush()?;
                     break;
                 }
 
-                
                 if counter == size {
                     let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
                     file.write(&decrypted_data)?;
@@ -374,7 +389,6 @@ impl Deserializer {
             ));
         }
 
-
         Ok(())
     }
 }
@@ -416,7 +430,9 @@ mod tests {
         let serialized_file = PathBuf::from("deserialize_with_decrypt_test.bin");
         let restored = PathBuf::from("deserialize_with_decrypt_test_dir");
         let deserializer = Deserializer::new(serialized_file, restored.clone());
-         deserializer.deserialize_with_decrypt("test_password").unwrap();
+        deserializer
+            .deserialize_with_decrypt("test_password")
+            .unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
@@ -426,16 +442,17 @@ mod tests {
         }
     }
 
-    #[test]
     fn t() {
         let original = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/실록_compressed");
         let result = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
         serializer.serialize_with_encrypt("823eric!@").unwrap();
 
-        let serialized_file = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
-        let restored = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test_dir");
+        let serialized_file =
+            PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
+        let restored =
+            PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test_dir");
         let deserializer = Deserializer::new(serialized_file, restored.clone());
-         deserializer.deserialize_with_decrypt("823eric!@").unwrap();
+        deserializer.deserialize_with_decrypt("823eric!@").unwrap();
     }
 }
