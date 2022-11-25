@@ -323,20 +323,17 @@ impl Deserializer {
                             .decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)])
                             .unwrap();
                         file.write(&decrypted_data.clone())?;
-
-                        let a = &mut temp[..BUFFER_LENGTH + 16 - (counter - size)];
-                        a.reverse();
-                        for i in (BUFFER_LENGTH + 16 - (counter - size)..temp.len()).rev() {
-                            buffer.push_front(temp[i]);
-                        }
+                        let mut new_buf = VecDeque::new();
+                        new_buf.extend(&temp[BUFFER_LENGTH + 16 - (counter - size)..]);
+                        new_buf.append(&mut buffer);
+                        buffer = new_buf;
                     } else {
                         let decrypted_data = decryptor.decrypt_last(&temp[..size]).unwrap();
                         file.write(&decrypted_data)?;
-                        let a = &mut temp[size..];
-                        a.reverse();
-                        for i in size..temp.len() {
-                            buffer.push_front(temp[i]);
-                        }
+                        let mut new_buf = VecDeque::new();
+                        new_buf.extend(&temp[size..]);
+                        new_buf.append(& mut buffer);
+                        buffer = new_buf;
                     }
                     file.flush()?;
                     break;
@@ -442,11 +439,12 @@ mod tests {
         }
     }
 
+    #[test]
     fn t() {
-        let original = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/실록_compressed");
-        let result = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
-        let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize_with_encrypt("823eric!@").unwrap();
+        // let original = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/실록_compressed");
+        // let result = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
+        // let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        // serializer.serialize_with_encrypt("823eric!@").unwrap();
 
         let serialized_file =
             PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
