@@ -3,11 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub mod deserializer;
-mod meta;
 pub mod serializer;
+pub mod deserializer;
+pub mod option;
+mod header;
+mod meta;
 
-const VERIFY_STRING: &str = "LUSL Serialized File";
 const BUFFER_LENGTH: usize = 8192;
 
 /// Find all files in the root directory in a recursive way.

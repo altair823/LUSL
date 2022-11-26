@@ -2,7 +2,12 @@ use chacha20poly1305::{aead::stream, KeyInit, XChaCha20Poly1305};
 
 use crate::encryption::{make_new_key_from_password, make_nonce};
 
-use super::{get_file_list, meta::MetaData, BUFFER_LENGTH, VERIFY_STRING};
+use super::{
+    get_file_list,
+    header::Header,
+    meta::MetaData,
+    BUFFER_LENGTH, option::SerializeOption,
+};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Read, Write},
@@ -18,14 +23,14 @@ use std::{
 ///
 /// # Examples
 /// ```
-/// use lusl::Serializer;
+/// use lusl::{Serializer, SerializeOption};
 /// use std::path::PathBuf;
 /// use std::fs;
 ///
 /// let original = PathBuf::from("tests");
 /// let result = PathBuf::from("serialized1.bin");
 /// let mut serializer = Serializer::new(original, result.clone()).unwrap();
-/// serializer.serialize().unwrap();
+/// serializer.serialize(&SerializeOption::default()).unwrap();
 /// assert!(result.is_file());
 /// ```
 
@@ -46,7 +51,7 @@ impl Serializer {
                 Err(_) => {
                     return Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,
-                        "file already exists!",
+                        "File already exists!",
                     ))
                 }
             }
@@ -65,9 +70,17 @@ impl Serializer {
     }
 
     /// Serialize root directory and copy it to result file.
-    pub fn serialize(&mut self) -> io::Result<()> {
-        self.result.write(&Serializer::get_file_marker())?;
-        self.result.write(&self.get_total_file_count())?;
+    pub fn serialize(&mut self, option: &SerializeOption) -> io::Result<()> {
+        match option.is_encrypt() {
+            true => self.serialize_with_encrypt(&option.password().unwrap())?,
+            false => self.serialize_raw()?,
+        }
+        Ok(())
+    }
+
+    fn serialize_raw(&mut self) -> io::Result<()> {
+        let header = Header::with(false, false, self.original_file_list.len() as u64);
+        self.result.write(&header.to_binary_vec())?;
         for file in &self.original_file_list {
             // Write metadata.
             let mut metadata = MetaData::from(file);
@@ -82,16 +95,15 @@ impl Serializer {
         Ok(())
     }
 
-    pub fn serialize_with_encrypt(&mut self, password: &str) -> io::Result<()> {
-        self.result.write(&Serializer::get_file_marker())?;
-        self.result.write(&self.get_total_file_count())?;
+    fn serialize_with_encrypt(&mut self, password: &str) -> io::Result<()> {
+        let header = Header::with(true, false, self.original_file_list.len() as u64);
+        self.result.write(&header.to_binary_vec())?;
         let (key, salt) = make_new_key_from_password(password);
         // Write salt.
         self.result.write(&salt)?;
         for file in &self.original_file_list {
             // Write metadata.
             let mut metadata = MetaData::from(file);
-            metadata.set_file_encrypted(true);
             metadata.strip_prefix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
@@ -101,34 +113,6 @@ impl Serializer {
         }
         self.result.flush()?;
         Ok(())
-    }
-
-    fn get_file_marker() -> Vec<u8> {
-        let mut marker: Vec<u8> = Vec::new();
-        for i in VERIFY_STRING.as_bytes() {
-            marker.push(*i);
-        }
-        marker
-    }
-
-    fn get_total_file_count(&self) -> Vec<u8> {
-        let file_count = self.original_file_list.len();
-        let mut count_binary: Vec<u8> = Vec::new();
-        let mut index = 0;
-        for byte in file_count.to_be_bytes() {
-            if byte == 0 {
-                index += 1;
-            } else {
-                break;
-            }
-        }
-        let file_count_bytes = file_count.to_le_bytes().len() - index;
-        count_binary.push(file_count_bytes as u8);
-        for i in &file_count.to_le_bytes()[..file_count_bytes as usize] {
-            count_binary.push(*i);
-        }
-
-        count_binary
     }
 }
 
@@ -196,37 +180,14 @@ fn write_encrypt_data<T: AsRef<Path>>(
             break;
         }
     }
-
-    // loop {
-    //     let length = {
-    //         let buffer = buffer_reader.fill_buf()?;
-    //         buffer_reader.consume(buffer.len());
-    //         if buffer.len() == BUFFER_LENGTH {
-    //             let encrypted_data = match encryptor.encrypt_next(buffer){
-    //                 Ok(c) => c,
-    //                 Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!"))
-    //             }; // The bottle neck!
-    //             destination.write(&encrypted_data)?;
-    //             buffer.len()
-    //         } else {
-    //             let encrypted_data = match encryptor.encrypt_last(buffer) {
-    //                 Ok(c) => c,
-    //                 Err(_) => return Err(io::Error::new(io::ErrorKind::InvalidData, "Cannot encrypt data!")),
-    //             };
-    //             destination.write(&encrypted_data)?;
-    //             buffer.len()
-    //         }
-    //     };
-    //     if length == 0 {
-    //         break;
-    //     }
-    // }
     destination.flush()?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+
+    use crate::serialize::option::SerializeOption;
 
     use super::Serializer;
     use std::{fs, path::PathBuf};
@@ -236,7 +197,7 @@ mod tests {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("serialize_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize().unwrap();
+        serializer.serialize(&SerializeOption::default()).unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
@@ -247,8 +208,9 @@ mod tests {
     fn serialize_with_encrypt_test() {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("serialize_with_encrypt_test.bin");
+        let option = SerializeOption::new().to_encrypt("test_password");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize_with_encrypt("test_password").unwrap();
+        serializer.serialize(&option).unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
