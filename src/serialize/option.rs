@@ -1,4 +1,21 @@
 /// Option struct for serializing and deserializing
+/// 
+/// Pass this object to the serializer or deserializer. 
+/// 
+/// #Examples 
+/// ```
+/// use lusl::SerializeOption;
+/// let default_option = SerializeOption::default();
+/// assert_eq!(default_option.is_encrypted(), false);
+/// assert_eq!(default_option.is_compressed(), false);
+/// assert_eq!(default_option.password(), None);
+/// let option = SerializeOption::new()
+/// .to_encrypt("test_password")
+/// .to_compress(true);
+/// assert_eq!(option.is_encrypted(), true);
+/// assert_eq!(option.is_compressed(), true);
+/// assert_eq!(option.password(), Some(String::from("test_password")));
+/// ```
 pub struct SerializeOption {
     encrypt: bool,
     compress: bool,
@@ -27,7 +44,7 @@ impl SerializeOption {
         self
     }
 
-    pub fn is_encrypt(&self) -> bool {
+    pub fn is_encrypted(&self) -> bool {
         self.encrypt
     }
 
@@ -35,10 +52,7 @@ impl SerializeOption {
         self.compress
     }
 
-    pub fn password(&self) -> Result<String, String> {
-        match &self.password {
-            Some(p) => Ok(p.to_string()),
-            None => Err(String::from("No password!")),
-        }
+    pub fn password(&self) -> Option<String> {
+        return self.password.clone();
     }
 }

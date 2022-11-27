@@ -71,7 +71,7 @@ impl Serializer {
 
     /// Serialize root directory and copy it to result file.
     pub fn serialize(&mut self, option: &SerializeOption) -> io::Result<()> {
-        match option.is_encrypt() {
+        match option.is_encrypted() {
             true => self.serialize_with_encrypt(&option.password().unwrap())?,
             false => self.serialize_raw()?,
         }

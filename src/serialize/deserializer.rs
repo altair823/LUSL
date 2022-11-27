@@ -12,7 +12,7 @@ use chacha20poly1305::{
 
 use crate::{
     encryption::{make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
-    serialize::meta::get_checksum,
+    binary::verify_checksum,
 };
 
 use super::{header::Header, option::SerializeOption};
@@ -87,19 +87,21 @@ impl Deserializer {
     }
     /// Deserialize data file to directory.
     /// 
-    /// If the file encrypted, deserializing with given password. 
+    /// If the file encrypted, deserializing with given password which is in the option. 
     /// 
-    /// Checking [MD5](md5) checksum of files and if it is different, occur error.
+    /// After deserializing a file is completed, checking [MD5](md5) checksum of files and if it is different, occur error.
     ///
     /// # Errors
-    /// MD5 checksum of deserialized file is different from original checksum.
+    /// - Wrong file format or data. 
+    /// - MD5 checksum of deserialized file is different from original checksum.
+    /// - Wrong password.
     pub fn deserialize(&mut self, option: &SerializeOption) -> io::Result<()> {
         let header = self.read_header()?;
         let original_file_count = header.file_count();
         match header.is_encrypted() {
             true => self.deserialize_with_decrypt(&match option.password(){
-                Ok(p) => p,
-                Err(_) => return Err(io::Error::new(io::ErrorKind::NotFound, "No password input.")),
+                Some(p) => p,
+                None => return Err(io::Error::new(io::ErrorKind::NotFound, "No password input.")),
             }, original_file_count)?,
             false => self.deserialize_raw(original_file_count)?,
         }
@@ -125,7 +127,7 @@ impl Deserializer {
             self.write_raw_file(file, size)?;
 
             // Verify checksum
-            self.verify_checksum(metadata, file_path)?;
+            verify_checksum(metadata, file_path)?;
 
             // Count file.
             current_file_count += 1;
@@ -157,9 +159,6 @@ impl Deserializer {
         loop {
             let metadata = self.read_metadata()?;
 
-            // Restore nonce and make decryptor.
-            let nonce = self.fill_buf_with_len(NONCE_LENGTH)?;
-
             // Write file
             let file_path = self.restore_path.join(&metadata.path());
             fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
@@ -172,10 +171,10 @@ impl Deserializer {
                     .open(&file_path)?,
             );
             let size = metadata.size() as usize;
-            self.write_decrypt_file(file, size, &key, nonce)?;
+            self.write_decrypt_file(file, size, &key)?;
 
             // Verify checksum
-            self.verify_checksum(metadata, file_path)?;
+            verify_checksum(metadata, file_path)?;
 
             // Count file.
             current_file_count += 1;
@@ -263,7 +262,8 @@ impl Deserializer {
         }
         Ok(())
     }
-    fn write_decrypt_file(&mut self, mut file: BufWriter<File>, mut size: usize, key: &[u8], nonce: Vec<u8>) -> io::Result<()> {
+    fn write_decrypt_file(&mut self, mut file: BufWriter<File>, mut size: usize, key: &[u8]) -> io::Result<()> {
+        let nonce = self.fill_buf_with_len(NONCE_LENGTH)?;
         let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
         let mut decryptor =
             stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
@@ -307,25 +307,7 @@ impl Deserializer {
         Ok(())
     }
 
-    fn verify_checksum<T: AsRef<Path>>(&self, metadata: MetaData, file_path: T) -> io::Result<()> {
-        let file = File::open(&file_path)?;
-        let new_checksum = get_checksum(file);
-        let old_checksum = metadata.checksum().as_ref().unwrap();
-        if new_checksum == *old_checksum {
-            println!("{} deserialize complete!", file_path.as_ref().to_str().unwrap());
-        } else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Wrong checksum!!!! {}, new checksum: {}, old checksum: {}",
-                    file_path.as_ref().to_str().unwrap(),
-                    new_checksum,
-                    old_checksum
-                ),
-            ));
-        }
-        Ok(())
-    }
+    
 }
 
 #[cfg(test)]

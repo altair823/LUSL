@@ -7,7 +7,7 @@ pub mod serializer;
 pub mod deserializer;
 pub mod option;
 mod header;
-mod meta;
+pub mod meta;
 
 const BUFFER_LENGTH: usize = 8192;
 

@@ -1,32 +1,13 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use md5::{Digest, Md5};
-
-use crate::binary::is_flag_true;
+use crate::binary::{is_flag_true, get_checksum};
 
 const FILE_FLAG: u8 = 0x80;
 const DIR_FLAG: u8 = 0x40;
 const SYMLINK_FLAG: u8 = 0x20;
 
-pub fn get_checksum(file: File) -> String {
-    let mut hasher = Md5::new();
-    let mut buf_reader = BufReader::new(file);
-    loop {
-        let length = {
-            let buf = buf_reader.fill_buf().unwrap();
-            hasher.update(buf);
-            buf.len()
-        };
-        if length == 0 {
-            break;
-        }
-        buf_reader.consume(length);
-    }
-    let a = hasher.finalize();
-    format!("{:x}", a)
-}
+
 
 #[derive(Debug)]
 pub struct MetaData {
