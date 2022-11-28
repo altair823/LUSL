@@ -16,6 +16,7 @@ pub struct Header<'a> {
 }
 
 impl<'a> Header<'a> {
+    /// Creates a new header with default values.
     pub fn new() -> Self {
         Header {
             label: FILE_LABEL,
@@ -25,6 +26,7 @@ impl<'a> Header<'a> {
         }
     }
 
+    /// Creates a new header from the given data.
     pub fn with(is_encrypted: bool, is_compressed: bool, file_count: u64) -> Self {
         Header {
             label: FILE_LABEL,
@@ -33,19 +35,23 @@ impl<'a> Header<'a> {
             file_count,
         }
     }
-    
+
+    /// Returns true if the file is encrypted.
     pub fn is_encrypted(&self) -> bool {
         self.is_encrypted
     }
 
+    /// Returns true if the file is compressed.
     pub fn is_compressed(&self) -> bool {
         self.is_compressed
     }
 
+    /// Returns the number of files in the archive.
     pub fn file_count(&self) -> u64 {
         self.file_count
     }
 
+    /// Converts the header into a binary vector.
     pub fn to_binary_vec(&self) -> Vec<u8> {
         let mut binary = Vec::new();
         binary.append(&mut self.label_to_binary());
@@ -54,6 +60,7 @@ impl<'a> Header<'a> {
         binary
     }
 
+    /// Converts the label to a binary vector.
     fn label_to_binary(&self) -> Vec<u8> {
         let mut binary = Vec::new();
         for i in self.label.as_bytes() {
@@ -62,6 +69,10 @@ impl<'a> Header<'a> {
         binary
     }
 
+    /// The flag is a byte that contains the following information:
+    /// - Bit 0: Encrypted
+    /// - Bit 1: Compressed
+    /// - Bit 2-7: Reserved
     fn flag_to_binary(&self) -> Vec<u8> {
         let mut binary = Vec::with_capacity(1);
         let mut flag: u8 = 0x0;
@@ -75,6 +86,7 @@ impl<'a> Header<'a> {
         binary
     }
 
+    /// Convert file count to binary vector.
     fn file_count_to_binary(&self) -> Vec<u8> {
         let mut count_binary: Vec<u8> = Vec::new();
         let mut index = 0;
@@ -93,6 +105,7 @@ impl<'a> Header<'a> {
         count_binary
     }
 
+    /// Read label of file from binary vector.
     pub fn deserialize_label(&mut self, binary: &[u8]) -> io::Result<()> {
         let mut label = String::new();
         for i in binary {
@@ -108,11 +121,13 @@ impl<'a> Header<'a> {
         }
     }
 
+    /// Deserialize the flag byte and set the header's flags.
     pub fn deserialize_flag(&mut self, binary: &[u8]) {
         self.is_encrypted = is_flag_true(binary[0], ENCRYPTED_FLAG);
         self.is_compressed = is_flag_true(binary[0], COMPRESSED_FLAG);
     }
 
+    /// Deserialize the file count and set the header's file count.
     pub fn deserialize_file_count(&mut self, binary: &[u8]) {
         self.file_count = binary_to_u64(binary);
     }

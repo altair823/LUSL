@@ -1,12 +1,7 @@
-use chacha20poly1305::{aead::stream, KeyInit, XChaCha20Poly1305};
-
-use crate::encryption::{make_new_key_from_password, make_nonce};
+use crate::encryption::{make_encryptor, make_new_key_from_password, make_nonce};
 
 use super::{
-    get_file_list,
-    header::Header,
-    meta::MetaData,
-    BUFFER_LENGTH, option::SerializeOption,
+    get_file_list, header::Header, meta::MetaData, option::SerializeOption, BUFFER_LENGTH,
 };
 use std::{
     fs::{self, File, OpenOptions},
@@ -81,15 +76,16 @@ impl Serializer {
     fn serialize_raw(&mut self) -> io::Result<()> {
         let header = Header::with(false, false, self.original_file_list.len() as u64);
         self.result.write(&header.to_binary_vec())?;
-        for file in &self.original_file_list {
+        for i in 0..self.original_file_list.len() {
             // Write metadata.
-            let mut metadata = MetaData::from(file);
+            let mut metadata = MetaData::from(&self.original_file_list[i]);
             metadata.strip_prefix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
             // Write binary data.
-            write_raw_data(file, &mut self.result)?;
-            println!("{:?} serializing complete!", &file);
+            let original_file = self.original_file_list[i].clone();
+            self.write_raw_data(&original_file)?;
+            println!("{:?} serializing complete!", &self.original_file_list[i]);
         }
         self.result.flush()?;
         Ok(())
@@ -101,87 +97,82 @@ impl Serializer {
         let (key, salt) = make_new_key_from_password(password);
         // Write salt.
         self.result.write(&salt)?;
-        for file in &self.original_file_list {
+        for i in 0..self.original_file_list.len() {
             // Write metadata.
-            let mut metadata = MetaData::from(file);
+            let mut metadata = MetaData::from(&self.original_file_list[i]);
             metadata.strip_prefix(&self.parent);
             self.result.write(&metadata.serialize())?;
 
             // Write binary data.
-            write_encrypt_data(file, &mut self.result, &key)?;
-            println!("{:?} serializing complete!", &file);
+            let original_file = self.original_file_list[i].clone();
+            self.write_encrypt_data(&original_file, &key)?;
+            println!("{:?} serializing complete!", &self.original_file_list[i]);
         }
         self.result.flush()?;
         Ok(())
     }
-}
 
-fn write_raw_data<T: AsRef<Path>>(
-    original_file: T,
-    destination: &mut BufWriter<File>,
-) -> io::Result<()> {
-    let original_file = File::open(original_file)?;
-    let mut buffer_reader = BufReader::new(original_file);
-    loop {
-        let length = {
-            let buffer = buffer_reader.fill_buf()?;
+    fn write_raw_data<T: AsRef<Path>>(&mut self, original_file: T) -> io::Result<()> {
+        let mut buffer_reader = BufReader::new(File::open(original_file)?);
+        loop {
+            let length = {
+                let buffer = buffer_reader.fill_buf()?;
 
-            destination.write(buffer)?;
-            buffer.len()
-        };
-        if length == 0 {
-            break;
-        }
-        buffer_reader.consume(length);
-    }
-    destination.flush()?;
-    Ok(())
-}
-
-fn write_encrypt_data<T: AsRef<Path>>(
-    original_file: T,
-    destination: &mut BufWriter<File>,
-    key: &Vec<u8>,
-) -> io::Result<()> {
-    let original_file = File::open(original_file)?;
-    let mut buffer_reader = BufReader::with_capacity(BUFFER_LENGTH, original_file);
-    let nonce = make_nonce();
-    let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
-    let mut encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
-
-    // Every time the encryption begins, create another random nonce.
-    destination.write(&nonce)?;
-
-    let mut buffer = [0u8; BUFFER_LENGTH];
-    loop {
-        let length = buffer_reader.read(&mut buffer)?;
-        if length == BUFFER_LENGTH {
-            let encrypted_data = match encryptor.encrypt_next(buffer.as_slice()) {
-                Ok(c) => c,
-                Err(_) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Cannot encrypt data!",
-                    ))
-                }
-            }; // The bottle neck!
-            destination.write(&encrypted_data)?;
-        } else {
-            let encrypted_data = match encryptor.encrypt_last(&buffer[..length]) {
-                Ok(c) => c,
-                Err(_) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Cannot encrypt data!",
-                    ))
-                }
+                self.result.write(buffer)?;
+                buffer.len()
             };
-            destination.write(&encrypted_data)?;
-            break;
+            if length == 0 {
+                break;
+            }
+            buffer_reader.consume(length);
         }
+        self.result.flush()?;
+        Ok(())
     }
-    destination.flush()?;
-    Ok(())
+
+    fn write_encrypt_data<T: AsRef<Path>>(
+        &mut self,
+        original_file: T,
+        key: &[u8],
+    ) -> io::Result<()> {
+        let mut buffer_reader = BufReader::with_capacity(BUFFER_LENGTH, File::open(original_file)?);
+        let nonce = make_nonce();
+        let mut encryptor = make_encryptor(key, &nonce);
+
+        // Every time the encryption begins, create another random nonce.
+        self.result.write(&nonce)?;
+
+        let mut buffer = [0u8; BUFFER_LENGTH];
+        loop {
+            let length = buffer_reader.read(&mut buffer)?;
+            if length == BUFFER_LENGTH {
+                let encrypted_data = match encryptor.encrypt_next(buffer.as_slice()) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Cannot encrypt data!",
+                        ))
+                    }
+                };
+                self.result.write(&encrypted_data)?;
+            } else {
+                let encrypted_data = match encryptor.encrypt_last(&buffer[..length]) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Cannot encrypt data!",
+                        ))
+                    }
+                };
+                self.result.write(&encrypted_data)?;
+                break;
+            }
+        }
+        self.result.flush()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

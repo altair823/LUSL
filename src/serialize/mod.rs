@@ -3,11 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub mod serializer;
 pub mod deserializer;
-pub mod option;
 mod header;
 pub mod meta;
+pub mod option;
+pub mod serializer;
 
 const BUFFER_LENGTH: usize = 8192;
 

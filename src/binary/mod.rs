@@ -1,6 +1,10 @@
-use std::{fs::File, path::Path, io::{self, BufReader, BufRead}};
+use std::{
+    fs::File,
+    io::{self, BufRead, BufReader},
+    path::Path,
+};
 
-use md5::{Md5, Digest};
+use md5::{Digest, Md5};
 
 use crate::serialize::meta::MetaData;
 
@@ -34,7 +38,10 @@ pub fn verify_checksum<T: AsRef<Path>>(metadata: MetaData, file_path: T) -> io::
     let new_checksum = get_checksum(file);
     let old_checksum = metadata.checksum().as_ref().unwrap();
     if new_checksum == *old_checksum {
-        println!("{} deserialize complete!", file_path.as_ref().to_str().unwrap());
+        println!(
+            "{} deserialize complete!",
+            file_path.as_ref().to_str().unwrap()
+        );
     } else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

@@ -1,13 +1,11 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use crate::binary::{is_flag_true, get_checksum};
+use crate::binary::{get_checksum, is_flag_true};
 
 const FILE_FLAG: u8 = 0x80;
 const DIR_FLAG: u8 = 0x40;
 const SYMLINK_FLAG: u8 = 0x20;
-
-
 
 #[derive(Debug)]
 pub struct MetaData {

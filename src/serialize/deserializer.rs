@@ -5,14 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chacha20poly1305::{
-    aead::{generic_array::GenericArray, stream},
-    KeyInit, XChaCha20Poly1305,
-};
-
 use crate::{
-    encryption::{make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
     binary::verify_checksum,
+    encryption::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
 };
 
 use super::{header::Header, option::SerializeOption};
@@ -86,23 +81,31 @@ impl Deserializer {
         Ok(self.buffer.drain(..length).collect())
     }
     /// Deserialize data file to directory.
-    /// 
-    /// If the file encrypted, deserializing with given password which is in the option. 
-    /// 
+    ///
+    /// If the file encrypted, deserializing with given password which is in the option.
+    ///
     /// After deserializing a file is completed, checking [MD5](md5) checksum of files and if it is different, occur error.
     ///
     /// # Errors
-    /// - Wrong file format or data. 
+    /// - Wrong file format or data.
     /// - MD5 checksum of deserialized file is different from original checksum.
     /// - Wrong password.
     pub fn deserialize(&mut self, option: &SerializeOption) -> io::Result<()> {
         let header = self.read_header()?;
         let original_file_count = header.file_count();
         match header.is_encrypted() {
-            true => self.deserialize_with_decrypt(&match option.password(){
-                Some(p) => p,
-                None => return Err(io::Error::new(io::ErrorKind::NotFound, "No password input.")),
-            }, original_file_count)?,
+            true => self.deserialize_with_decrypt(
+                &match option.password() {
+                    Some(p) => p,
+                    None => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            "No password input.",
+                        ))
+                    }
+                },
+                original_file_count,
+            )?,
             false => self.deserialize_raw(original_file_count)?,
         }
         Ok(())
@@ -117,14 +120,7 @@ impl Deserializer {
             let file_path = self.restore_path.join(&metadata.path());
             fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
             File::create(self.restore_path.join(&metadata.path()))?;
-            let file = BufWriter::new(
-                OpenOptions::new()
-                    .append(true)
-                    .write(true)
-                    .open(&file_path)?,
-            );
-            let size = metadata.size() as usize;
-            self.write_raw_file(file, size)?;
+            self.write_raw_file(&file_path, metadata.size() as usize)?;
 
             // Verify checksum
             verify_checksum(metadata, file_path)?;
@@ -150,7 +146,11 @@ impl Deserializer {
         Ok(())
     }
 
-    fn deserialize_with_decrypt(&mut self, password: &str, original_file_count: u64) -> io::Result<()> {
+    fn deserialize_with_decrypt(
+        &mut self,
+        password: &str,
+        original_file_count: u64,
+    ) -> io::Result<()> {
         let mut current_file_count: u64 = 0;
         // Read salt and key.
         let salt = self.fill_buf_with_len(SALT_LENGTH)?;
@@ -163,15 +163,7 @@ impl Deserializer {
             let file_path = self.restore_path.join(&metadata.path());
             fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
             File::create(self.restore_path.join(&metadata.path()))?;
-            let file = BufWriter::with_capacity(
-                BUFFER_LENGTH + 16,
-                OpenOptions::new()
-                    .append(true)
-                    .write(true)
-                    .open(&file_path)?,
-            );
-            let size = metadata.size() as usize;
-            self.write_decrypt_file(file, size, &key)?;
+            self.write_decrypt_file(&file_path, metadata.size() as usize, &key)?;
 
             // Verify checksum
             verify_checksum(metadata, file_path)?;
@@ -235,7 +227,17 @@ impl Deserializer {
         Ok(metadata)
     }
 
-    fn write_raw_file(&mut self, mut file: BufWriter<File>, size: usize) -> io::Result<()> {
+    fn write_raw_file<T: AsRef<Path>>(
+        &mut self,
+        restored_file_path: T,
+        size: usize,
+    ) -> io::Result<()> {
+        let mut file = BufWriter::new(
+            OpenOptions::new()
+                .append(true)
+                .write(true)
+                .open(&restored_file_path)?,
+        );
         let mut counter = 0;
         loop {
             counter += self.fill_buf()?;
@@ -262,11 +264,22 @@ impl Deserializer {
         }
         Ok(())
     }
-    fn write_decrypt_file(&mut self, mut file: BufWriter<File>, mut size: usize, key: &[u8]) -> io::Result<()> {
+
+    fn write_decrypt_file<T: AsRef<Path>>(
+        &mut self,
+        restored_file_path: T,
+        mut size: usize,
+        key: &[u8],
+    ) -> io::Result<()> {
+        let mut file = BufWriter::with_capacity(
+            BUFFER_LENGTH + 16,
+            OpenOptions::new()
+                .append(true)
+                .write(true)
+                .open(&restored_file_path)?,
+        );
         let nonce = self.fill_buf_with_len(NONCE_LENGTH)?;
-        let aead = XChaCha20Poly1305::new_from_slice(&key).unwrap();
-        let mut decryptor =
-            stream::DecryptorBE32::from_aead(aead, &GenericArray::from_slice(&nonce));
+        let mut decryptor = make_decryptor(key, &nonce);
         let mut counter = 0;
         loop {
             let mut temp = self.fill_buf_with_len(BUFFER_LENGTH + 16)?;
@@ -306,8 +319,6 @@ impl Deserializer {
         }
         Ok(())
     }
-
-    
 }
 
 #[cfg(test)]
@@ -327,7 +338,9 @@ mod tests {
         let serialized_file = PathBuf::from("deserialize_test.bin");
         let restored = PathBuf::from("deserialize_test_dir");
         let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
-        deserializer.deserialize(&SerializeOption::default()).unwrap();
+        deserializer
+            .deserialize(&SerializeOption::default())
+            .unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
@@ -342,7 +355,9 @@ mod tests {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("deserialize_with_decrypt_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize(&SerializeOption::new().to_encrypt("test_password")).unwrap();
+        serializer
+            .serialize(&SerializeOption::new().to_encrypt("test_password"))
+            .unwrap();
 
         let serialized_file = PathBuf::from("deserialize_with_decrypt_test.bin");
         let restored = PathBuf::from("deserialize_with_decrypt_test_dir");

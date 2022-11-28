@@ -9,5 +9,5 @@ mod binary;
 mod encryption;
 mod serialize;
 pub use serialize::deserializer::Deserializer;
-pub use serialize::serializer::Serializer;
 pub use serialize::option::SerializeOption;
+pub use serialize::serializer::Serializer;

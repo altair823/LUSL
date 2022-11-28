@@ -1,8 +1,8 @@
 /// Option struct for serializing and deserializing
-/// 
-/// Pass this object to the serializer or deserializer. 
-/// 
-/// #Examples 
+///
+/// Pass this object to the serializer or deserializer.
+///
+/// #Examples
 /// ```
 /// use lusl::SerializeOption;
 /// let default_option = SerializeOption::default();
@@ -24,7 +24,11 @@ pub struct SerializeOption {
 
 impl Default for SerializeOption {
     fn default() -> Self {
-        Self { encrypt: false, compress: false, password: None }
+        Self {
+            encrypt: false,
+            compress: false,
+            password: None,
+        }
     }
 }
 
