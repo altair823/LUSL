@@ -9,7 +9,7 @@ pub mod meta;
 pub mod option;
 pub mod serializer;
 
-const BUFFER_LENGTH: usize = 8192;
+pub const BUFFER_LENGTH: usize = 8192;
 
 /// Find all files in the root directory in a recursive way.
 /// The hidden files started with `.` will be not included in result.

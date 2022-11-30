@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     binary::verify_checksum,
-    encryption::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
+    encrypt::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
 };
 
 use super::{header::Header, option::SerializeOption};

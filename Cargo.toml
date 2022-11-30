@@ -13,3 +13,5 @@ repository = "https://github.com/altair823/file_manager"
 md-5 = "0.10.5"
 chacha20poly1305 = { version = "0.10.1", features = ["stream"] }
 rust-argon2 = "1.0.0"
+flate2 = "1.0.25"
+zip_archive = "1.2.2"

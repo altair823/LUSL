@@ -1,4 +1,4 @@
-use crate::encryption::{make_encryptor, make_new_key_from_password, make_nonce};
+use crate::encrypt::{make_encryptor, make_new_key_from_password, make_nonce};
 
 use super::{
     get_file_list, header::Header, meta::MetaData, option::SerializeOption, BUFFER_LENGTH,

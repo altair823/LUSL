@@ -6,7 +6,8 @@
 //! It also save [MD5](md5) checksum when serializing files and verify it when deserializing file for data integrity.
 
 mod binary;
-mod encryption;
+mod compress;
+mod encrypt;
 mod serialize;
 pub use serialize::deserializer::Deserializer;
 pub use serialize::option::SerializeOption;
