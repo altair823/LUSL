@@ -2,20 +2,20 @@
 
 White section: write once
 
-Bold section: write Repeatedly
+Italic section: write Repeatedly
 
 ### No encryption, No compression
 
 |fixed|variable|variable|variable|
 |---|---|---|---|
-|file tags|file count|**metadata**|**file data**|
+|file tags|file count|*metadata*|*file data*|
 
 
 ### With encryption, No compression
 
 |fixed|variable|variable|fixed|variable|
 |---|---|---|---|---|
-|file tags|file count|**metadata**|**nonce**|**encrypted data**|
+|file tags|file count|*metadata*|*nonce*|*encrypted data*|
 
 
 ### With encryption and compression
@@ -23,4 +23,4 @@ Bold section: write Repeatedly
 
 |fixed|variable|variable|fixed|fixed|variable|
 |---|---|---|---|---|---|
-|file tags|file count|**metadata**|**compressed data size**|**nonce**|**encrypted data**|
+|file tags|file count|*metadata*|*compressed data size*|*nonce*|*encrypted data*|
