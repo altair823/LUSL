@@ -2,40 +2,65 @@
 
 [![Documentation](https://docs.rs/image/badge.svg)](https://docs.rs/lusl/)
 
-A library for serializing and deserializing a directory. 
+`lusl` is a library that serializes a directory containing multiple files into a single file and also deserializes it, like a tarball.
 
 ## Features
 
 - Serialize a directory that contains multiple files. 
 - Deserialize serialized file and restore to a directory. 
 - Save and verify MD5 checksum of files for data integrity. 
+- Provides a way to encrypt and compress the serialized file.
 
-## Supported File Format
+The encryption is done using [XChaCha20-Poly1305](https://en.wikipedia.org/wiki/ChaCha20-Poly1305#XChaCha20-Poly1305_%E2%80%93_extended_nonce_variant) 
+and the compression is done using [zlib](https://en.wikipedia.org/wiki/Zlib).
 
-- All
+## File Structure
 
-## Examples
+See [documents](structure_of_serialized_file.md). 
 
-### `Serializer` example
+## Usage
+
+### Serializing and deserializing without encrypting or compressing.
 ```rust
-use lusl::Serializer;
+use lusl::{Serializer, Deserializer, SerializeOption};
 use std::path::PathBuf;
-use std::fs;
+
+// Serialize a directory into a file.
 let original = PathBuf::from("tests");
 let result = PathBuf::from("serialized.bin");
-let mut serializer = Serializer::new(original, result.clone()).unwrap();
+let mut serializer = Serializer::new(&original, &result).unwrap();
 serializer.serialize().unwrap();
-assert!(result.is_file());
-```
 
-### `Deserializer` example
-```rust
-use lusl::{Serializer, Deserializer};
-use std::path::PathBuf;
-let serialized_file = PathBuf::from("serialized.bin");
+// Deserialize the file into a directory.
 let restored = PathBuf::from("deserialized_dir");
-let deserializer = Deserializer::new(serialized_file, restored.clone());
+let mut deserializer = Deserializer::new(&result, &restored).unwrap();
 deserializer.deserialize().unwrap();
+
+assert!(&result.is_file());
+assert!(&restored.is_dir());
+```
+### Serializing and deserializing with encrypting and compressing.
+```rust
+use lusl::{Serializer, Deserializer, SerializeOption};
+use std::path::PathBuf;
+
+// Serialize a directory into a file.
+let original = PathBuf::from("tests");
+let result = PathBuf::from("serialized.bin");
+let mut serializer = Serializer::new(&original, &result).unwrap();
+
+// Set the encryption key and compression option.
+serializer.set_option(SerializeOption::new().to_encrypt("password").to_compress(true));
+serializer.serialize().unwrap();
+
+// Deserialize the file into a directory.
+let restored = PathBuf::from("deserialized_dir");
+let mut deserializer = Deserializer::new(&result, &restored).unwrap();
+
+// Set the encryption key and compression option.
+deserializer.set_option(SerializeOption::new().to_encrypt("password").to_compress(true));
+deserializer.deserialize().unwrap();
+
 assert!(&result.is_file());
 assert!(&restored.is_dir());
 ```

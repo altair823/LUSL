@@ -7,6 +7,7 @@ use std::{
 
 use crate::{
     binary::verify_checksum,
+    compress::{decompress, TEMP_COMPRESSED_FILE_PATH},
     encrypt::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
 };
 
@@ -27,12 +28,12 @@ use super::{header::FILE_LABEL, meta::MetaData, BUFFER_LENGTH};
 /// use std::path::PathBuf;
 /// let original = PathBuf::from("tests");
 /// let result = PathBuf::from("serialized2.bin");
-/// let mut serializer = Serializer::new(original, result.clone()).unwrap();
-/// serializer.serialize(&SerializeOption::default()).unwrap();
-/// let serialized_file = PathBuf::from("serialized2.bin");
+/// let mut serializer = Serializer::new(&original, &result).unwrap();
+/// serializer.serialize().unwrap();
+/// 
 /// let restored = PathBuf::from("deserialized_dir");
-/// let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
-/// deserializer.deserialize(&SerializeOption::default()).unwrap();
+/// let mut deserializer = Deserializer::new(&result, &restored).unwrap();
+/// deserializer.deserialize().unwrap();
 /// assert!(&result.is_file());
 /// assert!(&restored.is_dir());
 /// ```
@@ -40,6 +41,7 @@ pub struct Deserializer {
     serialized_file: BufReader<File>,
     buffer: VecDeque<u8>,
     restore_path: PathBuf,
+    option: SerializeOption,
 }
 
 impl Deserializer {
@@ -59,7 +61,13 @@ impl Deserializer {
             ),
             buffer: VecDeque::with_capacity(BUFFER_LENGTH + 16),
             restore_path: restore_path.as_ref().to_path_buf(),
+            option: SerializeOption::default(),
         })
+    }
+
+    /// Set option for deserializer.
+    pub fn set_option(&mut self, option: SerializeOption) {
+        self.option = option;
     }
 
     fn fill_buf(&mut self) -> io::Result<usize> {
@@ -90,12 +98,12 @@ impl Deserializer {
     /// - Wrong file format or data.
     /// - MD5 checksum of deserialized file is different from original checksum.
     /// - Wrong password.
-    pub fn deserialize(&mut self, option: &SerializeOption) -> io::Result<()> {
+    pub fn deserialize(&mut self) -> io::Result<()> {
         let header = self.read_header()?;
         let original_file_count = header.file_count();
         match header.is_encrypted() {
             true => self.deserialize_with_decrypt(
-                &match option.password() {
+                &match self.option.password() {
                     Some(p) => p,
                     None => {
                         return Err(io::Error::new(
@@ -120,7 +128,24 @@ impl Deserializer {
             let file_path = self.restore_path.join(&metadata.path());
             fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
             File::create(self.restore_path.join(&metadata.path()))?;
-            self.write_raw_file(&file_path, metadata.size() as usize)?;
+            match self.option.is_compressed() {
+                true => {
+                    let mut compressed_size = 0u64;
+                    let t = self.fill_buf_with_len(8)?;
+                    compressed_size += t[0] as u64 * 0x1;
+                    compressed_size += t[1] as u64 * 0x100;
+                    compressed_size += t[2] as u64 * 0x10000;
+                    compressed_size += t[3] as u64 * 0x1000000;
+                    let temp_file = PathBuf::from(TEMP_COMPRESSED_FILE_PATH)
+                        .join(metadata.path().file_name().unwrap());
+                    self.write_raw_file(&temp_file, compressed_size as usize)?;
+                    let a = decompress(&temp_file, TEMP_COMPRESSED_FILE_PATH)?;
+                    fs::rename(a, &file_path)?;
+                }
+                false => {
+                    self.write_raw_file(&file_path, metadata.size() as usize)?;
+                }
+            }
 
             // Verify checksum
             verify_checksum(metadata, file_path)?;
@@ -142,6 +167,9 @@ impl Deserializer {
                 io::ErrorKind::InvalidData,
                 "Number of files is different with the original directory!",
             ));
+        }
+        if PathBuf::from(TEMP_COMPRESSED_FILE_PATH).is_dir() {
+            fs::remove_dir_all(TEMP_COMPRESSED_FILE_PATH)?;
         }
         Ok(())
     }
@@ -163,7 +191,24 @@ impl Deserializer {
             let file_path = self.restore_path.join(&metadata.path());
             fs::create_dir_all(self.restore_path.join(&metadata.path()).parent().unwrap()).unwrap();
             File::create(self.restore_path.join(&metadata.path()))?;
-            self.write_decrypt_file(&file_path, metadata.size() as usize, &key)?;
+            match self.option.is_compressed() {
+                true => {
+                    let mut compressed_size = 0u64;
+                    let t = self.fill_buf_with_len(8)?;
+                    compressed_size += t[0] as u64 * 0x1;
+                    compressed_size += t[1] as u64 * 0x100;
+                    compressed_size += t[2] as u64 * 0x10000;
+                    compressed_size += t[3] as u64 * 0x1000000;
+                    let temp_file = PathBuf::from(TEMP_COMPRESSED_FILE_PATH)
+                        .join(metadata.path().file_name().unwrap());
+                    self.write_decrypt_file(&temp_file, compressed_size as usize, &key)?;
+                    let a = decompress(&temp_file, TEMP_COMPRESSED_FILE_PATH)?;
+                    fs::rename(a, &file_path)?;
+                }
+                false => {
+                    self.write_decrypt_file(&file_path, metadata.size() as usize, &key)?;
+                }
+            }
 
             // Verify checksum
             verify_checksum(metadata, file_path)?;
@@ -186,7 +231,9 @@ impl Deserializer {
                 "Number of files is different with the original directory!",
             ));
         }
-
+        if PathBuf::from(TEMP_COMPRESSED_FILE_PATH).is_dir() {
+            fs::remove_dir_all(TEMP_COMPRESSED_FILE_PATH)?;
+        }
         Ok(())
     }
 
@@ -232,9 +279,13 @@ impl Deserializer {
         restored_file_path: T,
         size: usize,
     ) -> io::Result<()> {
+        match restored_file_path.as_ref().parent() {
+            Some(p) => fs::create_dir_all(p)?,
+            None => (),
+        }
         let mut file = BufWriter::new(
             OpenOptions::new()
-                .append(true)
+                .create(true)
                 .write(true)
                 .open(&restored_file_path)?,
         );
@@ -271,10 +322,14 @@ impl Deserializer {
         mut size: usize,
         key: &[u8],
     ) -> io::Result<()> {
+        match restored_file_path.as_ref().parent() {
+            Some(p) => fs::create_dir_all(p)?,
+            None => (),
+        }
         let mut file = BufWriter::with_capacity(
             BUFFER_LENGTH + 16,
             OpenOptions::new()
-                .append(true)
+                .create(true)
                 .write(true)
                 .open(&restored_file_path)?,
         );
@@ -329,18 +384,18 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn deserialize_file_test() {
+    fn deserialize_test() {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("deserialize_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize(&SerializeOption::default()).unwrap();
+        serializer.set_option(SerializeOption::default());
+        serializer.serialize().unwrap();
 
         let serialized_file = PathBuf::from("deserialize_test.bin");
         let restored = PathBuf::from("deserialize_test_dir");
         let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
-        deserializer
-            .deserialize(&SerializeOption::default())
-            .unwrap();
+        deserializer.set_option(SerializeOption::default());
+        deserializer.deserialize().unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
@@ -355,16 +410,14 @@ mod tests {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("deserialize_with_decrypt_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer
-            .serialize(&SerializeOption::new().to_encrypt("test_password"))
-            .unwrap();
+        serializer.set_option(SerializeOption::new().to_encrypt("test_password"));
+        serializer.serialize().unwrap();
 
         let serialized_file = PathBuf::from("deserialize_with_decrypt_test.bin");
         let restored = PathBuf::from("deserialize_with_decrypt_test_dir");
         let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
-        deserializer
-            .deserialize(&SerializeOption::new().to_encrypt("test_password"))
-            .unwrap();
+        deserializer.set_option(SerializeOption::new().to_encrypt("test_password"));
+        deserializer.deserialize().unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
@@ -374,18 +427,50 @@ mod tests {
         }
     }
 
-    fn t() {
-        let original = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/실록_compressed");
-        let result = PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
-        let option = SerializeOption::new().to_encrypt("823eric!@");
+    #[test]
+    fn deserialize_with_compress_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("deserialize_compress_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize(&option).unwrap();
+        serializer.set_option(SerializeOption::new().to_compress(true));
+        serializer.serialize().unwrap();
 
-        let serialized_file =
-            PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test.bin");
-        let restored =
-            PathBuf::from("/mnt/c/Users/rlaxo/Desktop/deserialize_with_decrypt_test_dir");
+        let serialized_file = PathBuf::from("deserialize_compress_test.bin");
+        let restored = PathBuf::from("deserialize_compress_test_dir");
         let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
-        deserializer.deserialize(&option).unwrap();
+        deserializer.set_option(SerializeOption::new().to_compress(true));
+        deserializer.deserialize().unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+        if restored.is_dir() {
+            fs::remove_dir_all(restored).unwrap();
+        }
+    }
+
+    #[test]
+    fn deserialize_with_decrypt_compress_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("deserialize_decrypt_compress_test.bin");
+        let option = SerializeOption::new()
+            .to_compress(true)
+            .to_encrypt("test_password");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.set_option(option.clone());
+        serializer.serialize().unwrap();
+
+        let serialized_file = PathBuf::from("deserialize_decrypt_compress_test.bin");
+        let restored = PathBuf::from("deserialize_decrypt_compress_test_dir");
+        let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
+        deserializer.set_option(option.clone());
+        deserializer.deserialize().unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+        if restored.is_dir() {
+            fs::remove_dir_all(restored).unwrap();
+        }
     }
 }

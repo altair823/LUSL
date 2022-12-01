@@ -1,4 +1,7 @@
-use crate::encrypt::{make_encryptor, make_new_key_from_password, make_nonce};
+use crate::{
+    compress::{self, TEMP_COMPRESSED_FILE_PATH},
+    encrypt::{make_encryptor, make_new_key_from_password, make_nonce},
+};
 
 use super::{
     get_file_list, header::Header, meta::MetaData, option::SerializeOption, BUFFER_LENGTH,
@@ -16,16 +19,17 @@ use std::{
 ///
 /// Call `serialize` method to serialize all directory contents.   
 ///
-/// # Examples
-/// ```
+/// ## Usages
+/// 
+/// ```rust
 /// use lusl::{Serializer, SerializeOption};
 /// use std::path::PathBuf;
 /// use std::fs;
 ///
 /// let original = PathBuf::from("tests");
 /// let result = PathBuf::from("serialized1.bin");
-/// let mut serializer = Serializer::new(original, result.clone()).unwrap();
-/// serializer.serialize(&SerializeOption::default()).unwrap();
+/// let mut serializer = Serializer::new(&original, &result).unwrap();
+/// serializer.serialize().unwrap();
 /// assert!(result.is_file());
 /// ```
 
@@ -33,6 +37,7 @@ pub struct Serializer {
     parent: PathBuf,
     original_file_list: Vec<PathBuf>,
     result: BufWriter<File>,
+    option: SerializeOption,
 }
 
 impl Serializer {
@@ -61,13 +66,23 @@ impl Serializer {
                     .write(true)
                     .open(result_path)?,
             ),
+            option: SerializeOption::default(),
         })
     }
 
+    /// Set option to serialize.
+    pub fn set_option(&mut self, option: SerializeOption) {
+        self.option = option;
+    }
+
     /// Serialize root directory and copy it to result file.
-    pub fn serialize(&mut self, option: &SerializeOption) -> io::Result<()> {
-        match option.is_encrypted() {
-            true => self.serialize_with_encrypt(&option.password().unwrap())?,
+    /// 
+    /// If `option.compress` is true, compress result file.
+    /// 
+    /// If `option.encrypt` is true, encrypt result file.
+    pub fn serialize(&mut self) -> io::Result<()> {
+        match self.option.is_encrypted() {
+            true => self.serialize_with_encrypt(&self.option.password().unwrap())?,
             false => self.serialize_raw()?,
         }
         Ok(())
@@ -84,8 +99,27 @@ impl Serializer {
 
             // Write binary data.
             let original_file = self.original_file_list[i].clone();
-            self.write_raw_data(&original_file)?;
-            println!("{:?} serializing complete!", &self.original_file_list[i]);
+            match self.option.is_compressed() {
+                true => {
+                    let compressed_file =
+                        compress::compress(original_file, TEMP_COMPRESSED_FILE_PATH)?;
+                    self.result
+                        .write(&compressed_file.metadata()?.len().to_le_bytes().to_vec())?;
+                    self.write_raw_data(&compressed_file)?;
+                    fs::remove_file(compressed_file)?;
+                    println!(
+                        "{:?} compressing and serializing complete!",
+                        &self.original_file_list[i]
+                    );
+                }
+                false => {
+                    self.write_raw_data(&original_file)?;
+                    println!("{:?} serializing complete!", &self.original_file_list[i]);
+                }
+            }
+        }
+        if PathBuf::from(TEMP_COMPRESSED_FILE_PATH).is_dir() {
+            fs::remove_dir_all(TEMP_COMPRESSED_FILE_PATH)?;
         }
         self.result.flush()?;
         Ok(())
@@ -105,8 +139,27 @@ impl Serializer {
 
             // Write binary data.
             let original_file = self.original_file_list[i].clone();
-            self.write_encrypt_data(&original_file, &key)?;
-            println!("{:?} serializing complete!", &self.original_file_list[i]);
+            match self.option.is_compressed() {
+                true => {
+                    let compressed_file =
+                        compress::compress(original_file, TEMP_COMPRESSED_FILE_PATH)?;
+                    self.result
+                        .write(&compressed_file.metadata()?.len().to_le_bytes().to_vec())?;
+                    self.write_encrypt_data(&compressed_file, &key)?;
+                    fs::remove_file(compressed_file)?;
+                    println!(
+                        "{:?} compressing and serializing complete!",
+                        &self.original_file_list[i]
+                    );
+                }
+                false => {
+                    self.write_encrypt_data(&original_file, &key)?;
+                    println!("{:?} serializing complete!", &self.original_file_list[i]);
+                }
+            }
+        }
+        if PathBuf::from(TEMP_COMPRESSED_FILE_PATH).is_dir() {
+            fs::remove_dir_all(TEMP_COMPRESSED_FILE_PATH)?;
         }
         self.result.flush()?;
         Ok(())
@@ -188,7 +241,8 @@ mod tests {
         let original = PathBuf::from("tests");
         let result = PathBuf::from("serialize_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize(&SerializeOption::default()).unwrap();
+        serializer.set_option(SerializeOption::default());
+        serializer.serialize().unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
@@ -201,7 +255,37 @@ mod tests {
         let result = PathBuf::from("serialize_with_encrypt_test.bin");
         let option = SerializeOption::new().to_encrypt("test_password");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
-        serializer.serialize(&option).unwrap();
+        serializer.set_option(option);
+        serializer.serialize().unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+    }
+
+    #[test]
+    fn serialize_with_compress_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("serialize_with_compress_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.set_option(SerializeOption::new().to_compress(true));
+        serializer.serialize().unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+    }
+
+    #[test]
+    fn serialize_with_encrypt_compress_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("serialize_with_encrypt_compress_test.bin");
+        let option = SerializeOption::new()
+            .to_encrypt("test_password")
+            .to_compress(true);
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.set_option(option.clone());
+        serializer.serialize().unwrap();
         assert!(&result.is_file());
         if result.is_file() {
             fs::remove_file(result).unwrap();
