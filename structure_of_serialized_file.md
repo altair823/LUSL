@@ -1,20 +1,21 @@
 # Structure of Serialized File
 
 White section: write once
-Red section: write Repeatedly
+
+Bold section: write Repeatedly
 
 ### No encryption, No compression
 
 |fixed|variable|variable|variable|
 |---|---|---|---|
-|file tags|file count|<span style="color: red">metadata<span>|<span style="color: red">file data<span>|
+|file tags|file count|**metadata**|**file data**|
 
 
 ### With encryption, No compression
 
 |fixed|variable|variable|fixed|variable|
 |---|---|---|---|---|
-|file tags|file count|<span style="color: red">metadata<span>|<span style="color: red">nonce<span>|<span style="color: red">encrypted data<span>
+|file tags|file count|**metadata**|**nonce**|**encrypted data**|
 
 
 ### With encryption and compression
@@ -22,4 +23,4 @@ Red section: write Repeatedly
 
 |fixed|variable|variable|fixed|fixed|variable|
 |---|---|---|---|---|---|
-|file tags|file count|<span style="color: red">metadata<span>|<span style="color: red">compressed data size<span>|<span style="color: red">nonce<span>|<span style="color: red">encrypted data<span>
+|file tags|file count|**metadata**|**compressed data size**|**nonce**|**encrypted data**|
