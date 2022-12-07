@@ -341,31 +341,31 @@ impl Deserializer {
             size += 16;
             counter += temp.len();
             if counter > size {
-                if size > temp.len() {
-                    let decrypted_data = decryptor
-                        .decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)])
-                        .unwrap();
-                    file.write(&decrypted_data.clone())?;
-                    let mut new_buf = VecDeque::new();
-                    new_buf.extend(&temp[BUFFER_LENGTH + 16 - (counter - size)..]);
-                    new_buf.append(&mut self.buffer);
-                    self.buffer = new_buf;
-                } else {
-                    let decrypted_data = decryptor.decrypt_last(&temp[..size]).unwrap();
-                    file.write(&decrypted_data)?;
-                    let mut new_buf = VecDeque::new();
-                    new_buf.extend(&temp[size..]);
-                    new_buf.append(&mut self.buffer);
-                    self.buffer = new_buf;
-                }
+                let decrypted_data = decryptor
+                    .decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)])
+                    .unwrap();
+                file.write(&decrypted_data.clone())?;
+                let mut new_buf = VecDeque::new();
+                new_buf.extend(&temp[BUFFER_LENGTH + 16 - (counter - size)..]);
+                new_buf.append(&mut self.buffer);
+                self.buffer = new_buf;
                 file.flush()?;
                 break;
             }
 
             if counter == size {
-                let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
-                file.write(&decrypted_data)?;
+                if temp.len() == BUFFER_LENGTH + 16 {
+                    let decrypted_data = decryptor.decrypt_next(temp.as_slice()).unwrap();
+                    file.write(&decrypted_data)?;
+                    let temp = self.fill_buf_with_len(16)?;
+                    let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
+                    file.write(&decrypted_data)?;
+                } else {
+                    let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
+                    file.write(&decrypted_data)?;
+                }
                 file.flush()?;
+
                 break;
             }
             let decrypted_data = decryptor.decrypt_next(temp.as_slice()).unwrap();
