@@ -40,20 +40,31 @@ impl SerializeOption {
         Self::default()
     }
 
-    /// Set the encryption option.
+    /// Set the encryption option. Use with builder pattern.
     pub fn to_encrypt(mut self, password: &str) -> Self {
         self.encrypt = true;
         self.password = Some(String::from(password));
         self
     }
 
-    /// Set the compression option.
+    /// Set the compression option. Use with builder pattern.
     pub fn to_compress(mut self, compress: bool) -> Self {
         self.compress = compress;
         self
     }
 
-    /// Returns true if the option is set to encrypt.
+    /// Set the encryption option.
+    pub fn encrypt(&mut self, password: &str) {
+        self.encrypt = true;
+        self.password = Some(String::from(password));
+    }
+
+    /// Set the compression option. 
+    pub fn compress(&mut self, compress: bool) {
+        self.compress = compress;
+    }
+
+    /// Returns true if the option is set to encrypt. 
     pub fn is_encrypted(&self) -> bool {
         self.encrypt
     }
