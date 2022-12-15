@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use crate::binary::{get_checksum, is_flag_true};
+use crate::binary::{binary_to_u64, get_checksum, is_flag_true};
 
 const FILE_FLAG: u8 = 0x80;
 const DIR_FLAG: u8 = 0x40;
@@ -133,7 +133,7 @@ impl MetaData {
     }
 
     pub fn deserialize_size(&mut self, size_binary: &[u8]) {
-        self.size = super::binary_to_u64(size_binary);
+        self.size = binary_to_u64(size_binary);
     }
 
     pub fn deserialize_checksum(&mut self, checksum_binary: &[u8]) {

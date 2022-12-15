@@ -34,7 +34,6 @@ impl Default for SerializeOption {
 }
 
 impl SerializeOption {
-
     /// Make a new SerializeOption object.
     pub fn new() -> Self {
         Self::default()
@@ -59,12 +58,12 @@ impl SerializeOption {
         self.password = Some(String::from(password));
     }
 
-    /// Set the compression option. 
+    /// Set the compression option.
     pub fn compress(&mut self, compress: bool) {
         self.compress = compress;
     }
 
-    /// Returns true if the option is set to encrypt. 
+    /// Returns true if the option is set to encrypt.
     pub fn is_encrypted(&self) -> bool {
         self.encrypt
     }

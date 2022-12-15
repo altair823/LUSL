@@ -30,7 +30,7 @@ use super::{header::FILE_LABEL, meta::MetaData, BUFFER_LENGTH};
 /// let result = PathBuf::from("serialized2.bin");
 /// let mut serializer = Serializer::new(&original, &result).unwrap();
 /// serializer.serialize().unwrap();
-/// 
+///
 /// let restored = PathBuf::from("deserialized_dir");
 /// let mut deserializer = Deserializer::new(&result, &restored).unwrap();
 /// deserializer.deserialize().unwrap();
@@ -108,7 +108,7 @@ impl Deserializer {
                     None => {
                         return Err(io::Error::new(
                             io::ErrorKind::NotFound,
-                            "No password input.",
+                            "This file is encrypted but there is no password input.",
                         ))
                     }
                 },
@@ -343,8 +343,8 @@ impl Deserializer {
             if counter > size {
                 let decrypted_data = decryptor
                     .decrypt_last(&temp[..BUFFER_LENGTH + 16 - (counter - size)])
-                    .unwrap();
-                file.write(&decrypted_data.clone())?;
+                    .expect("decrypt failed");
+                file.write(&decrypted_data)?;
                 let mut new_buf = VecDeque::new();
                 new_buf.extend(&temp[BUFFER_LENGTH + 16 - (counter - size)..]);
                 new_buf.append(&mut self.buffer);
@@ -355,20 +355,28 @@ impl Deserializer {
 
             if counter == size {
                 if temp.len() == BUFFER_LENGTH + 16 {
-                    let decrypted_data = decryptor.decrypt_next(temp.as_slice()).unwrap();
+                    let decrypted_data = decryptor
+                        .decrypt_next(temp.as_slice())
+                        .expect("decrypt failed");
                     file.write(&decrypted_data)?;
                     let temp = self.fill_buf_with_len(16)?;
-                    let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
+                    let decrypted_data = decryptor
+                        .decrypt_last(temp.as_slice())
+                        .expect("decrypt failed");
                     file.write(&decrypted_data)?;
                 } else {
-                    let decrypted_data = decryptor.decrypt_last(temp.as_slice()).unwrap();
+                    let decrypted_data = decryptor
+                        .decrypt_last(temp.as_slice())
+                        .expect("decrypt failed");
                     file.write(&decrypted_data)?;
                 }
                 file.flush()?;
 
                 break;
             }
-            let decrypted_data = decryptor.decrypt_next(temp.as_slice()).unwrap();
+            let decrypted_data = decryptor
+                .decrypt_next(temp.as_slice())
+                .expect("decrypt failed");
             file.write(&decrypted_data)?;
             temp.clear();
         }

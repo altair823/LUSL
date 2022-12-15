@@ -14,7 +14,15 @@ pub fn is_flag_true(data: u8, flag: u8) -> bool {
         _ => true,
     }
 }
-
+pub fn binary_to_u64(binary: &[u8]) -> u64 {
+    let mut num: u64 = 0;
+    let mut coef = 1;
+    for i in binary {
+        num += *i as u64 * coef;
+        coef *= 0x100;
+    }
+    num
+}
 pub fn get_checksum(file: File) -> String {
     let mut hasher = Md5::new();
     let mut buf_reader = BufReader::new(file);

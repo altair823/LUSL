@@ -1,8 +1,6 @@
 use std::io;
 
-use crate::binary::is_flag_true;
-
-use super::binary_to_u64;
+use crate::binary::{binary_to_u64, is_flag_true};
 
 pub const FILE_LABEL: &str = "LUSL Serialized File";
 const ENCRYPTED_FLAG: u8 = 0x80;

@@ -20,7 +20,7 @@ use std::{
 /// Call `serialize` method to serialize all directory contents.   
 ///
 /// ## Usages
-/// 
+///
 /// ```rust
 /// use lusl::{Serializer, SerializeOption};
 /// use std::path::PathBuf;
@@ -76,9 +76,9 @@ impl Serializer {
     }
 
     /// Serialize root directory and copy it to result file.
-    /// 
+    ///
     /// If `option.compress` is true, compress result file.
-    /// 
+    ///
     /// If `option.encrypt` is true, encrypt result file.
     pub fn serialize(&mut self) -> io::Result<()> {
         match self.option.is_encrypted() {
