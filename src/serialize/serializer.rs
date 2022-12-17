@@ -81,6 +81,12 @@ impl Serializer {
     ///
     /// If `option.encrypt` is true, encrypt result file.
     pub fn serialize(&mut self) -> io::Result<()> {
+        let header = Header::with(
+            self.option.is_encrypted(),
+            self.option.is_compressed(),
+            self.original_file_list.len() as u64,
+        );
+        self.result.write(&header.to_binary_vec())?;
         match self.option.is_encrypted() {
             true => self.serialize_with_encrypt(&self.option.password().unwrap())?,
             false => self.serialize_raw()?,
@@ -89,8 +95,6 @@ impl Serializer {
     }
 
     fn serialize_raw(&mut self) -> io::Result<()> {
-        let header = Header::with(false, false, self.original_file_list.len() as u64);
-        self.result.write(&header.to_binary_vec())?;
         for i in 0..self.original_file_list.len() {
             // Write metadata.
             let mut metadata = MetaData::from(&self.original_file_list[i]);
@@ -126,8 +130,6 @@ impl Serializer {
     }
 
     fn serialize_with_encrypt(&mut self, password: &str) -> io::Result<()> {
-        let header = Header::with(true, false, self.original_file_list.len() as u64);
-        self.result.write(&header.to_binary_vec())?;
         let (key, salt) = make_new_key_from_password(password);
         // Write salt.
         self.result.write(&salt)?;

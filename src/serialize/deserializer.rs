@@ -11,8 +11,16 @@ use crate::{
     encrypt::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
 };
 
-use super::{header::Header, option::SerializeOption};
-use super::{header::FILE_LABEL, meta::MetaData, BUFFER_LENGTH};
+use super::{
+    header::{Header, get_major_version, get_minor_version},
+    option::SerializeOption,
+};
+use super::{
+    header::{Version, FILE_LABEL},
+    meta::MetaData,
+    BUFFER_LENGTH,
+};
+
 
 /// # Deserializer
 ///
@@ -99,7 +107,7 @@ impl Deserializer {
     /// - MD5 checksum of deserialized file is different from original checksum.
     /// - Wrong password.
     pub fn deserialize(&mut self) -> io::Result<()> {
-        let header = self.read_header()?;
+        let header = self.verify_header()?;
         let original_file_count = header.file_count();
         match header.is_encrypted() {
             true => self.deserialize_with_decrypt(
@@ -237,13 +245,76 @@ impl Deserializer {
         Ok(())
     }
 
-    fn read_header(&mut self) -> io::Result<Header> {
+    fn verify_header(&mut self) -> io::Result<Header> {
         // Verify label.
         let mut header = Header::new();
         header.deserialize_label(&self.fill_buf_with_len(FILE_LABEL.as_bytes().len())?)?;
 
+        // Verify version.
+        header.deserialize_version(&self.fill_buf_with_len(4)?)?;
+        if header.version().major() < get_major_version() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("The major version of the file is too low. It is a serialized file with an older version of the library. \n
+                To deserialize this file, library version {}.x.x is required.\n
+                If you want to deserialize this file, Use an older version of the library.", header.version().major()),
+            ));
+        } else if header.version().major() > get_major_version() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("The major version of the file is too high. It is a serialized file with a newer version of the library. \n
+                To deserialize this file, library version {}.{}.x is required. \n
+                If you want to deserialize this file, Use a newer version of the library.", header.version().major(), header.version().minor()),
+            ));
+        } else if header.version().minor() > get_minor_version() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("The minor version of the file is too high. It is a serialized file with a newer version of the library. \n
+                To deserialize this file, library version {}.{}.x is required. \n
+                If you want to deserialize this file, Use a newer version of the library.", header.version().major(), header.version().minor()),
+            ));
+        }
+
         // Read header flags.
         header.deserialize_flag(&self.fill_buf_with_len(1)?);
+
+        // Verify header flags.
+        match header.is_compressed() {
+            true => {
+                if !self.option.is_compressed() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "The archive is compressed, but the option is not set.",
+                    ));
+                }
+            }
+            false => {
+                if self.option.is_compressed() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "The archive is not compressed, but the option is set.",
+                    ));
+                }
+            }
+        }
+        match header.is_encrypted() {
+            true => {
+                if !self.option.is_encrypted() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "The archive is encrypted, but the option is not set.",
+                    ));
+                }
+            }
+            false => {
+                if self.option.is_encrypted() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "The archive is not encrypted, but the option is set.",
+                    ));
+                }
+            }
+        }
 
         // Read the number of original files.
         let original_file_count_bytes = self.fill_buf_with_len(1)?[0];
@@ -405,6 +476,7 @@ mod tests {
         deserializer.set_option(SerializeOption::default());
         deserializer.deserialize().unwrap();
         assert!(&result.is_file());
+        assert!(&restored.is_dir());
         if result.is_file() {
             fs::remove_file(result).unwrap();
         }
@@ -427,6 +499,7 @@ mod tests {
         deserializer.set_option(SerializeOption::new().to_encrypt("test_password"));
         deserializer.deserialize().unwrap();
         assert!(&result.is_file());
+        assert!(&restored.is_dir());
         if result.is_file() {
             fs::remove_file(result).unwrap();
         }
@@ -449,6 +522,7 @@ mod tests {
         deserializer.set_option(SerializeOption::new().to_compress(true));
         deserializer.deserialize().unwrap();
         assert!(&result.is_file());
+        assert!(&restored.is_dir());
         if result.is_file() {
             fs::remove_file(result).unwrap();
         }
@@ -474,6 +548,7 @@ mod tests {
         deserializer.set_option(option.clone());
         deserializer.deserialize().unwrap();
         assert!(&result.is_file());
+        assert!(&restored.is_dir());
         if result.is_file() {
             fs::remove_file(result).unwrap();
         }
