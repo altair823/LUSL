@@ -38,7 +38,11 @@ pub struct Version {
 
 impl Version {
     pub fn new(major: u8, minor: u8, patch: u8) -> Self {
-        Version { major, minor, patch }
+        Version {
+            major,
+            minor,
+            patch,
+        }
     }
     pub fn major(&self) -> u8 {
         self.major
@@ -234,8 +238,7 @@ impl Header {
         } else {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "There is no version data in the file. 
-            The file may be invalid or too old for current library version.",
+                "There is no version data in the file. The file may be invalid or too old for current library version.",
             ))
         }
     }

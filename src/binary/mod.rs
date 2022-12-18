@@ -46,10 +46,7 @@ pub fn verify_checksum<T: AsRef<Path>>(metadata: MetaData, file_path: T) -> io::
     let new_checksum = get_checksum(file);
     let old_checksum = metadata.checksum().as_ref().unwrap();
     if new_checksum == *old_checksum {
-        println!(
-            "{} deserialize complete!",
-            file_path.as_ref().to_str().unwrap()
-        );
+        Ok(())
     } else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -61,5 +58,4 @@ pub fn verify_checksum<T: AsRef<Path>>(metadata: MetaData, file_path: T) -> io::
             ),
         ));
     }
-    Ok(())
 }

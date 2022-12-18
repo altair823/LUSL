@@ -6,10 +6,12 @@ use crate::{
 use super::{
     get_file_list, header::Header, meta::MetaData, option::SerializeOption, BUFFER_LENGTH,
 };
+
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
+    sync::mpsc::Sender,
 };
 
 ///
@@ -38,6 +40,7 @@ pub struct Serializer {
     original_file_list: Vec<PathBuf>,
     result: BufWriter<File>,
     option: SerializeOption,
+    sender: Option<Sender<String>>,
 }
 
 impl Serializer {
@@ -67,12 +70,21 @@ impl Serializer {
                     .open(result_path)?,
             ),
             option: SerializeOption::default(),
+            sender: None,
         })
     }
 
     /// Set option to serialize.
+    /// If you want to serialize with default option, don't call this method.
+    /// For more information, see [`SerializeOption`].
     pub fn set_option(&mut self, option: SerializeOption) {
         self.option = option;
+    }
+
+    /// Set transmitter to send progress.
+    /// If you don't want to send progress, don't call this method.
+    pub fn set_sender(&mut self, tx: Sender<String>) {
+        self.sender = Some(tx);
     }
 
     /// Serialize root directory and copy it to result file.
@@ -91,7 +103,14 @@ impl Serializer {
             true => self.serialize_with_encrypt(&self.option.password().unwrap())?,
             false => self.serialize_raw()?,
         }
+        self.send_progress("All serialization complete");
         Ok(())
+    }
+
+    fn send_progress(&self, message: &str) {
+        if let Some(ref tx) = self.sender {
+            tx.send(message.to_string()).unwrap();
+        }
     }
 
     fn serialize_raw(&mut self) -> io::Result<()> {
@@ -111,14 +130,17 @@ impl Serializer {
                         .write(&compressed_file.metadata()?.len().to_le_bytes().to_vec())?;
                     self.write_raw_data(&compressed_file)?;
                     fs::remove_file(compressed_file)?;
-                    println!(
-                        "{:?} compressing and serializing complete!",
-                        &self.original_file_list[i]
-                    );
+                    self.send_progress(&format!(
+                        "Serialization and compression complete: {}",
+                        self.original_file_list[i].to_str().unwrap()
+                    ))
                 }
                 false => {
                     self.write_raw_data(&original_file)?;
-                    println!("{:?} serializing complete!", &self.original_file_list[i]);
+                    self.send_progress(&format!(
+                        "Serialization complete: {}",
+                        self.original_file_list[i].to_str().unwrap()
+                    ))
                 }
             }
         }
@@ -149,14 +171,17 @@ impl Serializer {
                         .write(&compressed_file.metadata()?.len().to_le_bytes().to_vec())?;
                     self.write_encrypt_data(&compressed_file, &key)?;
                     fs::remove_file(compressed_file)?;
-                    println!(
-                        "{:?} compressing and serializing complete!",
-                        &self.original_file_list[i]
-                    );
+                    self.send_progress(&format!(
+                        "Serialization and compression complete: {}",
+                        self.original_file_list[i].to_str().unwrap()
+                    ))
                 }
                 false => {
                     self.write_encrypt_data(&original_file, &key)?;
-                    println!("{:?} serializing complete!", &self.original_file_list[i]);
+                    self.send_progress(&format!(
+                        "Serialization complete: {}",
+                        self.original_file_list[i].to_str().unwrap()
+                    ))
                 }
             }
         }
@@ -236,7 +261,7 @@ mod tests {
     use crate::serialize::option::SerializeOption;
 
     use super::Serializer;
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, thread};
 
     #[test]
     fn serialize_test() {
@@ -292,5 +317,37 @@ mod tests {
         if result.is_file() {
             fs::remove_file(result).unwrap();
         }
+    }
+
+    #[test]
+    fn serialize_sender_test() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let original = PathBuf::from("tests");
+            let result = PathBuf::from("serialize_sender_test.bin");
+            let mut serializer = Serializer::new(original, result.clone()).unwrap();
+            serializer.set_option(SerializeOption::default());
+            serializer.set_sender(tx);
+            serializer.serialize().unwrap();
+            assert!(&result.is_file());
+            if result.is_file() {
+                fs::remove_file(result).unwrap();
+            }
+        });
+        let mut msgs = Vec::new();
+        for msg in rx {
+            msgs.push(msg);
+        }
+        assert_eq!(msgs, ["Serialization complete: tests/original_images/dir1/laboratory-g8f9267f5f_1920.jpg", 
+        "Serialization complete: tests/original_images/dir1/board-g43968feec_1920.jpg", 
+        "Serialization complete: tests/original_images/dir1/폭발.jpg", 
+        "Serialization complete: tests/original_images/dir2/capsules-g869437822_1920.jpg", 
+        "Serialization complete: tests/original_images/dir4/colorful-2174045.png", 
+        "Serialization complete: tests/original_images/dir2/dir3/syringe-ge5e95bfe6_1920.jpg", 
+        "Serialization complete: tests/original_images/dir2/dir3/books-g6617d4d97_1920.jpg", 
+        "Serialization complete: tests/original_images/dir4/dir5/digitization-1755812_1920.jpg", 
+        "Serialization complete: tests/original_images/dir4/dir5/dir6/tv-g87676cdfb_1280.png", 
+        "Serialization complete: tests/original_images/dir4/dir5/dir6/test-pattern-152459.png", 
+        "All serialization complete"]);
     }
 }

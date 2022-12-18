@@ -10,7 +10,7 @@ use flate2::{
     Compression,
 };
 
-pub const TEMP_COMPRESSED_FILE_PATH: &str = "./temp";
+pub const TEMP_COMPRESSED_FILE_PATH: &str = "./.temp";
 
 pub fn compress<T: AsRef<Path>, O: AsRef<Path>>(
     original_file_path: T,

@@ -3,6 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
+    sync::mpsc::Sender,
 };
 
 use crate::{
@@ -11,16 +12,11 @@ use crate::{
     encrypt::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
 };
 
+use super::{header::FILE_LABEL, meta::MetaData, BUFFER_LENGTH};
 use super::{
-    header::{Header, get_major_version, get_minor_version},
+    header::{get_major_version, get_minor_version, Header},
     option::SerializeOption,
 };
-use super::{
-    header::{Version, FILE_LABEL},
-    meta::MetaData,
-    BUFFER_LENGTH,
-};
-
 
 /// # Deserializer
 ///
@@ -50,6 +46,7 @@ pub struct Deserializer {
     buffer: VecDeque<u8>,
     restore_path: PathBuf,
     option: SerializeOption,
+    sender: Option<Sender<String>>,
 }
 
 impl Deserializer {
@@ -70,12 +67,19 @@ impl Deserializer {
             buffer: VecDeque::with_capacity(BUFFER_LENGTH + 16),
             restore_path: restore_path.as_ref().to_path_buf(),
             option: SerializeOption::default(),
+            sender: None,
         })
     }
 
     /// Set option for deserializer.
     pub fn set_option(&mut self, option: SerializeOption) {
         self.option = option;
+    }
+
+    /// Set transmitter to send progress.
+    /// If you don't want to send progress, don't call this method.
+    pub fn set_sender(&mut self, tx: Sender<String>) {
+        self.sender = Some(tx);
     }
 
     fn fill_buf(&mut self) -> io::Result<usize> {
@@ -127,6 +131,12 @@ impl Deserializer {
         Ok(())
     }
 
+    fn send_progress(&self, message: &str) {
+        if let Some(ref tx) = self.sender {
+            tx.send(message.to_string()).unwrap();
+        }
+    }
+
     fn deserialize_raw(&mut self, original_file_count: u64) -> io::Result<()> {
         let mut current_file_count: u64 = 0;
         loop {
@@ -156,10 +166,18 @@ impl Deserializer {
             }
 
             // Verify checksum
-            verify_checksum(metadata, file_path)?;
+            verify_checksum(metadata, &file_path)?;
 
             // Count file.
             current_file_count += 1;
+
+            // Send progress.
+            self.send_progress(&format!(
+                "Deserializing... {} / {}    {}",
+                current_file_count,
+                original_file_count,
+                &file_path.to_str().unwrap()
+            ));
 
             // EOF.
             if self.buffer.len() == 0 {
@@ -219,10 +237,18 @@ impl Deserializer {
             }
 
             // Verify checksum
-            verify_checksum(metadata, file_path)?;
+            verify_checksum(metadata, &file_path)?;
 
             // Count file.
             current_file_count += 1;
+
+            // Send progress.
+            self.send_progress(&format!(
+                "Deserializing... {} / {}    {}",
+                current_file_count,
+                original_file_count,
+                &file_path.to_str().unwrap()
+            ));
 
             // EOF.
             if self.buffer.len() == 0 {
@@ -255,23 +281,23 @@ impl Deserializer {
         if header.version().major() < get_major_version() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("The major version of the file is too low. It is a serialized file with an older version of the library. \n
-                To deserialize this file, library version {}.x.x is required.\n
+                format!("The major version of the file is too low. It is a serialized file with an older version of the library. \
+                To deserialize this file, library version {}.x.x is required. \
                 If you want to deserialize this file, Use an older version of the library.", header.version().major()),
             ));
         } else if header.version().major() > get_major_version() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("The major version of the file is too high. It is a serialized file with a newer version of the library. \n
-                To deserialize this file, library version {}.{}.x is required. \n
+                format!("The major version of the file is too high. It is a serialized file with a newer version of the library. \
+                To deserialize this file, library version {}.{}.x is required. \
                 If you want to deserialize this file, Use a newer version of the library.", header.version().major(), header.version().minor()),
             ));
         } else if header.version().minor() > get_minor_version() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("The minor version of the file is too high. It is a serialized file with a newer version of the library. \n
-                To deserialize this file, library version {}.{}.x is required. \n
-                If you want to deserialize this file, Use a newer version of the library.", header.version().major(), header.version().minor()),
+                format!("The minor version of the file is too high. \
+                It is a serialized file with a newer version of the library. \
+                To deserialize this file, library version {}.{}.x is required. If you want to deserialize this file, Use a newer version of the library.", header.version().major(), header.version().minor()),
             ));
         }
 
@@ -460,7 +486,7 @@ mod tests {
     use crate::serialize::serializer::Serializer;
 
     use super::*;
-    use std::path::PathBuf;
+    use std::{path::PathBuf, sync::mpsc, thread};
 
     #[test]
     fn deserialize_test() {
@@ -555,5 +581,46 @@ mod tests {
         if restored.is_dir() {
             fs::remove_dir_all(restored).unwrap();
         }
+    }
+
+    #[test]
+    fn deserialize_sender_test() {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let original = PathBuf::from("tests");
+            let result = PathBuf::from("deserialize_sender_test.bin");
+            let mut serializer = Serializer::new(original, result.clone()).unwrap();
+            serializer.set_option(SerializeOption::default());
+            serializer.serialize().unwrap();
+
+            let serialized_file = PathBuf::from("deserialize_sender_test.bin");
+            let restored = PathBuf::from("deserialize_sender_test_dir");
+            let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
+            deserializer.set_option(SerializeOption::default());
+            deserializer.set_sender(tx);
+            deserializer.deserialize().unwrap();
+            assert!(&result.is_file());
+            assert!(&restored.is_dir());
+            if result.is_file() {
+                fs::remove_file(result).unwrap();
+            }
+            if restored.is_dir() {
+                fs::remove_dir_all(restored).unwrap();
+            }
+        });
+        let mut msgs = Vec::new();
+        for msg in rx {
+            msgs.push(msg);
+        }
+        assert_eq!(msgs, ["Deserializing... 1 / 10    deserialize_sender_test_dir/tests/original_images/dir1/laboratory-g8f9267f5f_1920.jpg", 
+        "Deserializing... 2 / 10    deserialize_sender_test_dir/tests/original_images/dir1/board-g43968feec_1920.jpg", 
+        "Deserializing... 3 / 10    deserialize_sender_test_dir/tests/original_images/dir1/폭발.jpg", 
+        "Deserializing... 4 / 10    deserialize_sender_test_dir/tests/original_images/dir2/capsules-g869437822_1920.jpg", 
+        "Deserializing... 5 / 10    deserialize_sender_test_dir/tests/original_images/dir4/colorful-2174045.png", 
+        "Deserializing... 6 / 10    deserialize_sender_test_dir/tests/original_images/dir2/dir3/syringe-ge5e95bfe6_1920.jpg", 
+        "Deserializing... 7 / 10    deserialize_sender_test_dir/tests/original_images/dir2/dir3/books-g6617d4d97_1920.jpg", 
+        "Deserializing... 8 / 10    deserialize_sender_test_dir/tests/original_images/dir4/dir5/digitization-1755812_1920.jpg", 
+        "Deserializing... 9 / 10    deserialize_sender_test_dir/tests/original_images/dir4/dir5/dir6/tv-g87676cdfb_1280.png",
+        "Deserializing... 10 / 10    deserialize_sender_test_dir/tests/original_images/dir4/dir5/dir6/test-pattern-152459.png"]);
     }
 }
