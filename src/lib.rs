@@ -63,6 +63,85 @@ mod binary;
 mod compress;
 mod encrypt;
 mod serialize;
+
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::Path;
+
 pub use serialize::deserializer::Deserializer;
+use serialize::header::{FILE_LABEL, VERSION_START_POINTER};
 pub use serialize::option::SerializeOption;
 pub use serialize::serializer::Serializer;
+pub use serialize::version;
+
+/// Reads the version of the serialized file.
+/// # Errors
+/// This function will return an error if the file is not a serialized file or the version is invalid.
+/// # Examples
+/// ```rust
+/// use std::path::PathBuf;
+/// use lusl::read_version;
+/// use lusl::{Serializer, Deserializer};
+/// use lusl::version::{Version, get_major_version, get_minor_version, get_patch_version};
+///
+/// // create a new serialized file.
+/// let original = PathBuf::from("tests");
+/// let result = PathBuf::from("serialized.bin");
+/// let mut serializer = Serializer::new(&original, &result).unwrap();
+/// serializer.serialize().unwrap();
+///
+/// // read the version of the serialized file.
+/// let version = read_version(&result).unwrap();
+/// assert_eq!(get_major_version(), version.major());
+/// assert_eq!(get_minor_version(), version.minor());
+/// assert_eq!(get_patch_version(), version.patch());
+///
+/// ```
+pub fn read_version<T: AsRef<Path>>(filepath: T) -> io::Result<version::Version> {
+    let mut file = File::open(filepath)?;
+    let mut buffer: Vec<u8> = Vec::with_capacity(FILE_LABEL.len());
+    buffer.resize(FILE_LABEL.len(), 0);
+    file.read(&mut buffer)?;
+    let mut version_buffer: Vec<u8> = Vec::with_capacity(4);
+    version_buffer.resize(4, 0);
+    file.read(&mut version_buffer)?;
+    if version_buffer[0] != VERSION_START_POINTER {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid version format",
+        ));
+    }
+    let version = version::Version::from_bytes(&version_buffer[1..4])?;
+    Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::serialize::version::{get_major_version, get_minor_version, get_patch_version};
+
+    use super::*;
+    use std::{fs, path::PathBuf};
+
+    #[test]
+    fn test_read_version() {
+        // create a new serialized file.
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("serialized.bin");
+        let mut serializer = Serializer::new(&original, &result).unwrap();
+        serializer.serialize().unwrap();
+
+        // read version of it.
+        let version = read_version(&result).unwrap();
+        assert_eq!(
+            version,
+            version::Version::new(
+                get_major_version(),
+                get_minor_version(),
+                get_patch_version()
+            )
+        );
+
+        // delete the file.
+        fs::remove_file(&result).unwrap();
+    }
+}

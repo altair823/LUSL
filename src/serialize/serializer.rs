@@ -61,7 +61,7 @@ impl Serializer {
         }
         File::create(&result_path)?;
         let original_file_list: Vec<PathBuf>;
-        // if original root is file, add it to file list only. 
+        // if original root is file, add it to file list only.
         if original_root.as_ref().is_file() {
             original_file_list = vec![original_root.as_ref().to_path_buf()];
         } else {

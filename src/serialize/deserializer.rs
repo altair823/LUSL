@@ -12,11 +12,12 @@ use crate::{
     encrypt::{make_decryptor, make_key_from_password_and_salt, NONCE_LENGTH, SALT_LENGTH},
 };
 
-use super::{header::FILE_LABEL, meta::MetaData, BUFFER_LENGTH};
 use super::{
-    header::{get_major_version, get_minor_version, Header},
+    header::Header,
     option::SerializeOption,
+    version::{get_major_version, get_minor_version},
 };
+use super::{header::FILE_LABEL, meta::MetaData, BUFFER_LENGTH};
 
 /// # Deserializer
 ///

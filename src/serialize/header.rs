@@ -1,84 +1,16 @@
-use core::fmt;
 use std::io;
 
-use crate::binary::{binary_to_u64, is_flag_true};
+use crate::{
+    binary::{binary_to_u64, is_flag_true},
+    version::Version,
+};
+
+use super::version::{get_major_version, get_minor_version, get_patch_version};
 
 pub const FILE_LABEL: &str = "LUSL Serialized File";
-pub const MAJOR_VERSION: &str = env!("CARGO_PKG_VERSION_MAJOR");
-pub const MINOR_VERSION: &str = env!("CARGO_PKG_VERSION_MINOR");
-pub const PATCH_VERSION: &str = env!("CARGO_PKG_VERSION_PATCH");
-const VERSION_START_POINTER: u8 = 0x1;
+pub const VERSION_START_POINTER: u8 = 0x1;
 const ENCRYPTED_FLAG: u8 = 0x80;
 const COMPRESSED_FLAG: u8 = 0x40;
-
-pub fn get_major_version() -> u8 {
-    MAJOR_VERSION.parse().unwrap_or_default()
-}
-
-pub fn get_minor_version() -> u8 {
-    MINOR_VERSION.parse().unwrap_or_default()
-}
-
-pub fn get_patch_version() -> u8 {
-    PATCH_VERSION.parse().unwrap_or_default()
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Version {
-    major: u8,
-    minor: u8,
-    patch: u8,
-}
-
-impl Version {
-    pub fn new(major: u8, minor: u8, patch: u8) -> Self {
-        Version {
-            major,
-            minor,
-            patch,
-        }
-    }
-    pub fn major(&self) -> u8 {
-        self.major
-    }
-    pub fn minor(&self) -> u8 {
-        self.minor
-    }
-    pub fn patch(&self) -> u8 {
-        self.patch
-    }
-    pub fn to_string(&self) -> String {
-        format!("{}.{}.{}", self.major, self.minor, self.patch)
-    }
-    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
-        if bytes.len() < 3 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid version bytes.",
-            ));
-        }
-        Ok(Version {
-            major: bytes[0],
-            minor: bytes[1],
-            patch: bytes[2],
-        })
-    }
-    pub fn to_bytes(&self) -> [u8; 3] {
-        [self.major, self.minor, self.patch]
-    }
-}
-
-impl Default for Version {
-    fn default() -> Self {
-        Version::new(get_major_version(), get_minor_version(), get_patch_version())
-    }
-}
-
-impl fmt::Display for Version {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 
@@ -93,11 +25,11 @@ impl Header {
     /// Creates a new header with default values.
     pub fn new() -> Self {
         Header {
-            version: Version {
-                major: MAJOR_VERSION.parse().unwrap_or_default(),
-                minor: MINOR_VERSION.parse().unwrap_or_default(),
-                patch: PATCH_VERSION.parse().unwrap_or_default(),
-            },
+            version: Version::new(
+                get_major_version(),
+                get_minor_version(),
+                get_patch_version(),
+            ),
             is_encrypted: false,
             is_compressed: false,
             file_count: 0,
@@ -107,11 +39,11 @@ impl Header {
     /// Creates a new header from the given data.
     pub fn with(is_encrypted: bool, is_compressed: bool, file_count: u64) -> Self {
         Header {
-            version: Version {
-                major: MAJOR_VERSION.parse().unwrap_or_default(),
-                minor: MINOR_VERSION.parse().unwrap_or_default(),
-                patch: PATCH_VERSION.parse().unwrap_or_default(),
-            },
+            version: Version::new(
+                get_major_version(),
+                get_minor_version(),
+                get_patch_version(),
+            ),
             is_encrypted,
             is_compressed,
             file_count,
