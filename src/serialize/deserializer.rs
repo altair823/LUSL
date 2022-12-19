@@ -489,16 +489,37 @@ mod tests {
     use std::{path::PathBuf, sync::mpsc, thread};
 
     #[test]
-    fn deserialize_test() {
-        let original = PathBuf::from("tests");
-        let result = PathBuf::from("deserialize_test.bin");
+    fn deserialize_file_test() {
+        let original = PathBuf::from("tests/original_images/dir1/board-g43968feec_1920.jpg");
+        let result = PathBuf::from("deserialize_file_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
         serializer.set_option(SerializeOption::default());
         serializer.serialize().unwrap();
 
-        let serialized_file = PathBuf::from("deserialize_test.bin");
+        let restored = PathBuf::from("deserialize_file_test_restored_dir");
+        let mut deserializer = Deserializer::new(result.clone(), restored.clone()).unwrap();
+        deserializer.set_option(SerializeOption::default());
+        deserializer.deserialize().unwrap();
+        assert!(&result.is_file());
+        assert!(&restored.is_dir());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+        if restored.is_dir() {
+            fs::remove_dir_all(restored).unwrap();
+        }
+    }
+
+    #[test]
+    fn deserialize_dir_test() {
+        let original = PathBuf::from("tests");
+        let result = PathBuf::from("deserialize_dir_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.set_option(SerializeOption::default());
+        serializer.serialize().unwrap();
+
         let restored = PathBuf::from("deserialize_test_dir");
-        let mut deserializer = Deserializer::new(serialized_file, restored.clone()).unwrap();
+        let mut deserializer = Deserializer::new(result.clone(), restored.clone()).unwrap();
         deserializer.set_option(SerializeOption::default());
         deserializer.deserialize().unwrap();
         assert!(&result.is_file());

@@ -11,12 +11,6 @@ const VERSION_START_POINTER: u8 = 0x1;
 const ENCRYPTED_FLAG: u8 = 0x80;
 const COMPRESSED_FLAG: u8 = 0x40;
 
-pub enum VersionCompareResult {
-    High,
-    Equal,
-    Low,
-}
-
 pub fn get_major_version() -> u8 {
     MAJOR_VERSION.parse().unwrap_or_default()
 }
@@ -76,11 +70,7 @@ impl Version {
 
 impl Default for Version {
     fn default() -> Self {
-        Version {
-            major: MAJOR_VERSION.parse().unwrap_or_default(),
-            minor: MINOR_VERSION.parse().unwrap_or_default(),
-            patch: PATCH_VERSION.parse().unwrap_or_default(),
-        }
+        Version::new(get_major_version(), get_minor_version(), get_patch_version())
     }
 }
 

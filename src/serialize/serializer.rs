@@ -60,9 +60,16 @@ impl Serializer {
             }
         }
         File::create(&result_path)?;
+        let original_file_list: Vec<PathBuf>;
+        // if original root is file, add it to file list only. 
+        if original_root.as_ref().is_file() {
+            original_file_list = vec![original_root.as_ref().to_path_buf()];
+        } else {
+            original_file_list = get_file_list(&original_root)?;
+        }
         Ok(Serializer {
             parent: original_root.as_ref().parent().unwrap().to_path_buf(),
-            original_file_list: get_file_list(original_root)?,
+            original_file_list: original_file_list,
             result: BufWriter::new(
                 OpenOptions::new()
                     .append(true)
@@ -264,9 +271,22 @@ mod tests {
     use std::{fs, path::PathBuf, thread};
 
     #[test]
-    fn serialize_test() {
+    fn serialize_file_test() {
+        let original = PathBuf::from("tests/original_images/dir1/board-g43968feec_1920.jpg");
+        let result = PathBuf::from("serialize_file_test.bin");
+        let mut serializer = Serializer::new(original, result.clone()).unwrap();
+        serializer.set_option(SerializeOption::default());
+        serializer.serialize().unwrap();
+        assert!(&result.is_file());
+        if result.is_file() {
+            fs::remove_file(result).unwrap();
+        }
+    }
+
+    #[test]
+    fn serialize_dir_test() {
         let original = PathBuf::from("tests");
-        let result = PathBuf::from("serialize_test.bin");
+        let result = PathBuf::from("serialize_dir_test.bin");
         let mut serializer = Serializer::new(original, result.clone()).unwrap();
         serializer.set_option(SerializeOption::default());
         serializer.serialize().unwrap();
