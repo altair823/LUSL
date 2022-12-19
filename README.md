@@ -64,3 +64,15 @@ deserializer.deserialize().unwrap();
 assert!(&result.is_file());
 assert!(&restored.is_dir());
 ```
+
+## Test
+
+If you want to run test codes(like `cargo test`), must not run parallel test. 
+
+It cause multiple error because all test codes were written without assuming parallel tests. 
+
+To run test, run code below. 
+
+```bash
+cargo test -- --test-threads=1
+```
