@@ -1,6 +1,6 @@
 # Structure of Serialized File
 
-White section: write once
+Non italic section: write once
 
 Italic section: write Repeatedly
 
