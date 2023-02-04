@@ -1,13 +1,16 @@
 [package]
 name = "lusl"
 description = "Lossless Uncompressed Serializer Library"
-version = "2.0.2"
+version = "2.1.0"
 edition = "2021"
 authors = ["Kim tae hyeon <kimth0734@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/altair823/LUSL"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dev-dependencies]
+hex = "0.4.3"
 
 [dependencies]
 md-5 = "0.10.5"
