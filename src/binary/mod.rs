@@ -23,7 +23,7 @@ pub fn binary_to_u64(binary: &[u8]) -> u64 {
     }
     num
 }
-pub fn get_checksum(file: File) -> String {
+pub fn get_checksum(file: File) -> Vec<u8> {
     let mut hasher = Md5::new();
     let mut buf_reader = BufReader::new(file);
     loop {
@@ -38,7 +38,7 @@ pub fn get_checksum(file: File) -> String {
         buf_reader.consume(length);
     }
     let a = hasher.finalize();
-    format!("{:x}", a)
+    a.to_vec()
 }
 
 pub fn verify_checksum<T: AsRef<Path>>(metadata: MetaData, file_path: T) -> io::Result<()> {
@@ -51,7 +51,7 @@ pub fn verify_checksum<T: AsRef<Path>>(metadata: MetaData, file_path: T) -> io::
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "Wrong checksum!!!! {}, new checksum: {}, old checksum: {}",
+                "Wrong checksum!!!! {}, new checksum: {:x?}, old checksum: {:x?}",
                 file_path.as_ref().to_str().unwrap(),
                 new_checksum,
                 old_checksum

@@ -14,7 +14,7 @@ pub struct MetaData {
     is_file: bool,
     is_dir: bool,
     is_symlink: bool,
-    checksum: Option<String>,
+    checksum: Option<Vec<u8>>,
 }
 
 impl MetaData {
@@ -37,7 +37,7 @@ impl MetaData {
         self.size
     }
 
-    pub fn checksum(&self) -> &Option<String> {
+    pub fn checksum(&self) -> &Option<Vec<u8>> {
         &self.checksum
     }
 
@@ -99,12 +99,12 @@ impl MetaData {
         let mut binary: Vec<u8> = Vec::new();
         match &self.checksum {
             Some(c) => {
-                for i in c.as_bytes() {
+                for i in c {
                     binary.push(*i);
                 }
             }
             None => {
-                for _ in 0..32 {
+                for _ in 0..16 {
                     binary.push(0);
                 }
             }
@@ -137,10 +137,7 @@ impl MetaData {
     }
 
     pub fn deserialize_checksum(&mut self, checksum_binary: &[u8]) {
-        self.checksum = match String::from_utf8(checksum_binary.to_vec()) {
-            Ok(c) => Some(c),
-            Err(_) => Some(String::from("00000000000000000000000000000000")),
-        };
+        self.checksum = Some(checksum_binary.to_vec());
     }
 }
 
@@ -189,6 +186,7 @@ impl PartialEq for MetaData {
 mod tests {
 
     use std::{collections::VecDeque, path::PathBuf};
+    use hex::decode;
 
     use crate::serialize::get_file_list;
 
@@ -225,7 +223,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("4e42993bfd2756df48b646d68433db1e")),
+                checksum: Some(decode("4e42993bfd2756df48b646d68433db1e").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("capsules-g869437822_1920.jpg"),
@@ -233,7 +231,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("60e191a914756ff7ae259e33f40f20da")),
+                checksum: Some(decode("60e191a914756ff7ae259e33f40f20da").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("board-g43968feec_1920.jpg"),
@@ -241,7 +239,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("37ca14866812327e1776d8cbb250501c")),
+                checksum: Some(decode("37ca14866812327e1776d8cbb250501c").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("laboratory-g8f9267f5f_1920.jpg"),
@@ -249,7 +247,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("0c37be929cdc29b5ac0914104cda75aa")),
+                checksum: Some(decode("0c37be929cdc29b5ac0914104cda75aa").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("폭발.jpg"),
@@ -257,7 +255,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("4753aff9b06a34832ad1de0a69d5dcd3")),
+                checksum: Some(decode("4753aff9b06a34832ad1de0a69d5dcd3").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("digitization-1755812_1920.jpg"),
@@ -265,7 +263,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("4b6cab47e9193a4aebe4c8c6b7c88c1b")),
+                checksum: Some(decode("4b6cab47e9193a4aebe4c8c6b7c88c1b").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("syringe-ge5e95bfe6_1920.jpg"),
@@ -273,7 +271,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("a7385d8a719c3036a857e21225c5bd6b")),
+                checksum: Some(decode("a7385d8a719c3036a857e21225c5bd6b").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("books-g6617d4d97_1920.jpg"),
@@ -281,7 +279,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("65aee1442129f56a0a6157c6b55f80c9")),
+                checksum: Some(decode("65aee1442129f56a0a6157c6b55f80c9").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("test-pattern-152459.png"),
@@ -289,7 +287,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("a09d4eab0326ba5403369035531f9308")),
+                checksum: Some(decode("a09d4eab0326ba5403369035531f9308").unwrap()),
             },
             MetaData {
                 path: PathBuf::from("tv-g87676cdfb_1280.png"),
@@ -297,7 +295,7 @@ mod tests {
                 is_file: true,
                 is_dir: false,
                 is_symlink: false,
-                checksum: Some(String::from("91517821bc6851b0d9abec5d5adea961")),
+                checksum: Some(decode("91517821bc6851b0d9abec5d5adea961").unwrap()),
             },
         ]);
         original_metadata_vec.sort_by_key(|m| m.path.clone());
@@ -351,14 +349,13 @@ mod tests {
         let type_size = binary[name_end_index + 2];
         let type_size_index = (type_size & 0xF) as usize;
 
-        let expected_checksum: [u8; 32] = [
-            51, 55, 99, 97, 49, 52, 56, 54, 54, 56, 49, 50, 51, 50, 55, 101, 49, 55, 55, 54, 100,
-            56, 99, 98, 98, 50, 53, 48, 53, 48, 49, 99,
+        let expected_checksum: [u8; 16] = [
+            55, 202, 20, 134, 104, 18, 50, 126, 23, 118, 216, 203, 178, 80, 80, 28
         ];
 
         assert_eq!(
             &binary
-                [name_end_index + type_size_index + 3..name_end_index + type_size_index + 3 + 32],
+                [name_end_index + type_size_index + 3..name_end_index + type_size_index + 3 + 16],
             expected_checksum
         );
     }
@@ -386,7 +383,7 @@ mod tests {
         meta2.deserialize_size(&binary.drain(..size_count).collect::<Vec<u8>>());
 
         // Restore checksum
-        meta2.deserialize_checksum(&binary.drain(..32).collect::<Vec<u8>>());
+        meta2.deserialize_checksum(&binary.drain(..16).collect::<Vec<u8>>());
 
         assert_eq!(meta1, meta2);
     }
